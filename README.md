@@ -8,7 +8,7 @@ Windows 10 / 11 x64 · 单文件 EXE · MIT
 
 ## 下载
 
-Windows 版 v0.1.5 为单文件 EXE。[GitHub 下载](https://github.com/liuxiaogang-com/desktop-icon-billiards/releases/download/v0.1.5/DesktopIconBilliards-0.1.5-win-x64.exe) · [CNB 国内镜像](https://cnb.cool/liuxiaogang/desktop-icon-billiards/-/releases/download/v0.1.5/DesktopIconBilliards-0.1.5-win-x64.exe)
+Windows 版 v0.1.6 为单文件 EXE。[GitHub 下载](https://github.com/liuxiaogang-com/desktop-icon-billiards/releases/download/v0.1.6/DesktopIconBilliards-0.1.6-win-x64.exe) · [CNB 国内镜像](https://cnb.cool/liuxiaogang/desktop-icon-billiards/-/releases/download/v0.1.6/DesktopIconBilliards-0.1.6-win-x64.exe)
 
 `desktop-icon-billiards` 的源码和发布附件在两个平台同步。[GitHub 仓库](https://github.com/liuxiaogang-com/desktop-icon-billiards) · [CNB 国内镜像仓库](https://cnb.cool/liuxiaogang/desktop-icon-billiards)
 
@@ -28,7 +28,7 @@ Windows 版 v0.1.5 为单文件 EXE。[GitHub 下载](https://github.com/liuxiao
 - 球数固定在 **15～45 颗**。桌面图标少于 15 个时，复制现有图标补足到 15 颗；多于 45 个时只取其中 45 个，优先快捷方式和程序，其次是文件，文件夹排在最后，同类按桌面顺序取。主窗口会显示「桌面 N 个图标，复制补到 / 取其中 X 颗」。补球和落选的图标都只在游戏画面里生效，不会改动桌面，退出后照常恢复。
 - 「全球排名」**默认关闭**。第一次启动会弹出一次询问，选「是」才开启，选「否」不会上传任何东西；之后可随时用主窗口的「排名」按钮开关。开启后，每局清台时提交一次成绩，用平均每颗用时排名。
 - 开启排名需要联网，没有网络或服务不可用时游戏不受影响，只是这一局不计入排名。
-- 每局清台后会弹出**成绩卡片**：游戏名与图标、段位（传奇球王、桌面球王、大师、高手、熟手、新秀）、全球名次和超过的玩家比例、用时、平均每颗用时、图标数、击球数和个人最佳，底部带有作者标记。点「保存图片」会存成 1080×1350 的 PNG（在「图片」文件夹的 `DesktopIconBilliards` 里），点「复制图片」可直接粘贴到微信、QQ 或帖子里。卡片只含成绩，不会出现你的桌面图标和文件名；没开启排名时卡片以平均每颗用时为主，并提示开启排名。
+- 每局清台后会弹出**成绩卡片**：游戏名与图标、段位（传奇球王、桌面球王、大师、高手、熟手、新秀）、全球名次和超过的玩家比例、用时、平均每颗用时、图标数、击球数和个人最佳，底部带有作者标记。点「保存图片」会存成 1080×1350 的 PNG（在「图片」文件夹的 `DesktopIconBilliards` 里），点「复制图片」可直接粘贴到微信、QQ 或帖子里。点击「查看排行榜」可查看全球前 50 条个人最佳成绩，自己的名次高亮并固定显示在底部。卡片只含成绩，不会出现你的桌面图标和文件名；没开启排名时卡片以平均每颗用时为主，并提示开启排名。
 
 ![成绩卡片示例：大师段位，全球第 1,204 名，超过 87% 的玩家](docs/images/result-card.png)
 
