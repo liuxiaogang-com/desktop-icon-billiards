@@ -501,6 +501,9 @@ class BilliardsOverlay:
             self.poses.append((left + center, top + bottom - source.height / 2,
                                source.width, source.height, 0, 0, 1.0))
         self.table = BilliardsMotion(self.primary_bounds, [source.size for source in self.sources])
+        # All icons share the collision radius. Prepare the six immutable layers
+        # once so simultaneous impacts never resize the same artwork per ball.
+        self.ring_frames = {level: self.ring_layer(level) for level in range(1, RING_LEVELS + 1)}
 
     # -- lifecycle ---------------------------------------------------------
     def show(self, snapshot, journal):
@@ -698,7 +701,7 @@ class BilliardsOverlay:
             frame.alpha_composite(picture, ((BALL_CANVAS - picture.width) // 2,
                                             (BALL_CANVAS - picture.height) // 2))
             if ring:
-                frame.alpha_composite(self.ring_layer(ring))
+                frame.alpha_composite(self.ring_frames[ring])
         self.frame_cache[key] = frame
         self.frame_cache_bytes += BALL_CANVAS * BALL_CANVAS * 4
         while len(self.frame_cache) > 256 or self.frame_cache_bytes > 16 * 1024 * 1024:
@@ -879,3 +882,5 @@ class BilliardsOverlay:
         if hasattr(self, 'frame_cache'):
             self.frame_cache.clear()
             self.frame_cache_bytes = 0
+        if hasattr(self, 'ring_frames'):
+            self.ring_frames.clear()

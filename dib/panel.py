@@ -11,6 +11,10 @@ import os
 import tkinter as tk
 from tkinter import ttk
 
+import win32api
+import win32con
+import win32gui
+
 from PIL import Image, ImageTk
 
 from . import card
@@ -193,7 +197,7 @@ class ResultDialog:
     ``rank`` (phase ``off`` / ``unavailable`` / ``skipped`` / ``pending`` / ``ok`` / ``error``).
     """
 
-    PREVIEW = (360, 450)  # a third of the card's real size
+    PREVIEW = (600, 750)
 
     def __init__(self, root, callbacks, credit='', site=''):
         self.callbacks = callbacks
@@ -203,41 +207,71 @@ class ResultDialog:
         self.photo = None
         self.last = None
         self.folder = None
+        self.root = root
         self.top = tk.Toplevel(root)
         top = self.top
         top.title('清台完成')
         top.configure(bg=BG)
         top.transient(root)
         top.resizable(False, False)
-        shell = tk.Frame(top, bg=BG, padx=22, pady=18)
+        top.iconbitmap(str(card.LOGO.with_suffix('.ico')))
+        shell = tk.Frame(top, bg=BG)
         shell.pack(fill='both', expand=True)
 
         self.photo = ImageTk.PhotoImage(Image.new('RGB', self.PREVIEW, CARD), master=top)
         self.preview = tk.Label(shell, image=self.photo, bg=BG, bd=0)
         self.preview.pack()
 
-        share = tk.Frame(shell, bg=BG)
-        share.pack(fill='x', pady=(14, 0))
-        Pill(share, '保存图片', self.save, 'soft', padx=14).pack(side='left')
-        Pill(share, '复制图片', self.copy, 'soft', padx=14).pack(side='left', padx=(8, 0))
+        if callbacks.get('leaderboard'):
+            Pill(shell, '查看排行榜  ›', callbacks['leaderboard'], 'ghost', pady=8).pack(fill='x')
+
+        share = tk.Frame(shell, bg=BG, padx=12, pady=12)
+        share.pack(fill='x')
+        for column, (text, command, kind) in enumerate((
+                ('保存图片', self.save, 'soft'), ('复制图片', self.copy, 'soft'),
+                ('再来一局', callbacks['again'], 'primary'))):
+            share.columnconfigure(column, weight=1, uniform='actions')
+            Pill(share, text, command, kind, bold=kind == 'primary', padx=8, pady=11).grid(
+                row=0, column=column, sticky='ew', padx=(0 if column == 0 else 6, 0 if column == 2 else 6))
+        status = self.status = tk.Frame(shell, bg=BG, height=30)
+        status.pack_propagate(False)
         self.feedback_text = tk.StringVar(top)
-        self.feedback = tk.Label(share, textvariable=self.feedback_text, font=(FONT, 8), fg=MUTED, bg=BG,
-                                 anchor='w', justify='left', wraplength=150)
-        self.feedback.pack(side='left', padx=(10, 0))
+        self.feedback = tk.Label(status, textvariable=self.feedback_text, font=(FONT, 8), fg=MUTED, bg=BG,
+                                 anchor='w', justify='left')
+        self.feedback.pack(side='left', fill='x', expand=True)
         self.feedback.bind('<ButtonRelease-1>', lambda event: self.open_folder())
 
-        actions = tk.Frame(shell, bg=BG)
-        actions.pack(fill='x', pady=(10, 0))
-        self.offer = Pill(actions, '开启全球排名', callbacks['enable_rank'], 'on', padx=12)
-        Pill(actions, '再来一局', callbacks['again'], 'primary', bold=True, padx=18).pack(side='right')
-        Pill(actions, '关闭', self.close, 'soft', padx=16).pack(side='right', padx=(0, 8))
+        self.offer = Pill(status, '开启全球排名', callbacks['enable_rank'], 'ghost', padx=0, pady=0)
         top.bind('<Escape>', lambda event: self.close())
         top.protocol('WM_DELETE_WINDOW', self.close)
         top.update_idletasks()
-        width = top.winfo_reqwidth()
-        left = max(0, (top.winfo_screenwidth() - width) // 2)
-        top.geometry(f'+{left}+{max(10, top.winfo_screenheight() // 14)}')
+        self._fit_screen(root)
         top.lift()
+
+    def _fit_screen(self, root):
+        # Use the toolbar's monitor and its work area (excluding the taskbar),
+        # with measured native borders and DPI-scaled controls rather than a fixed height.
+        monitor = win32api.MonitorFromPoint((root.winfo_rootx(), root.winfo_rooty()),
+                                           win32con.MONITOR_DEFAULTTONEAREST)
+        left, upper, right, bottom = win32api.GetMonitorInfo(monitor)['Work']
+        top = self.top
+        hwnd = win32gui.GetAncestor(top.winfo_id(), win32con.GA_ROOT)
+        x0, y0, x1, y1 = win32gui.GetWindowRect(hwnd)
+        border_w = x1 - x0 - top.winfo_width()
+        border_h = y1 - y0 - top.winfo_height()
+        extra_w = top.winfo_reqwidth() - self.photo.width() + border_w
+        extra_h = top.winfo_reqheight() - self.photo.height() + border_h
+        scale = min(1, (right - left - extra_w - 32) / self.PREVIEW[0],
+                    (bottom - upper - extra_h - 32) / self.PREVIEW[1])
+        self.preview_size = (max(1, int(self.PREVIEW[0] * scale)), max(1, int(self.PREVIEW[1] * scale)))
+        frame = self.image.resize(self.preview_size, Image.Resampling.LANCZOS) if self.image else Image.new('RGB', self.preview_size, CARD)
+        self.photo = ImageTk.PhotoImage(frame, master=top)
+        self.preview.configure(image=self.photo)
+        top.update_idletasks()
+        width, height = top.winfo_reqwidth() + border_w, top.winfo_reqheight() + border_h
+        x = left + max(0, (right - left - width) // 2)
+        y = upper + max(0, (bottom - upper - height) // 2)
+        top.geometry(f'+{x}+{y}')
 
     def alive(self):
         return self.top is not None and self.top.winfo_exists()
@@ -252,12 +286,19 @@ class ResultDialog:
             return
         self.last = view
         self.image = card.render_card(view, credit=self.credit, site=self.site)
-        self.photo = ImageTk.PhotoImage(self.image.resize(self.PREVIEW, Image.Resampling.LANCZOS), master=self.top)
-        self.preview.configure(image=self.photo)
         if view['rank']['phase'] == 'off':
-            self.offer.pack(side='left')
+            self.offer.pack(side='right')
         else:
             self.offer.pack_forget()
+        self._layout_status()
+
+    def _layout_status(self):
+        if self.feedback_text.get() or (self.last and self.last['rank']['phase'] == 'off'):
+            self.status.pack(fill='x', padx=12, pady=(0, 8))
+        else:
+            self.status.pack_forget()
+        self.top.update_idletasks()
+        self._fit_screen(self.root)
 
     def save(self):
         if self.image is None:
@@ -289,6 +330,7 @@ class ResultDialog:
 
     def _say(self, text, colour):
         self.feedback_text.set(text)
+        self._layout_status()
         self.feedback.configure(fg=colour, cursor='hand2' if self.folder is not None and '点此' in text else 'arrow')
 
 

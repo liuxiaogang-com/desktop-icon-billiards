@@ -25,6 +25,7 @@ from .instance import acquire_instance, claim_instance_mutex, publish_version
 from .overlay import BilliardsOverlay
 from .panel import MainPanel, ResultDialog, format_duration, show_update_dialog
 from .paths import runtime_directory
+from .leaderboard import LeaderboardDialog
 from .rank import RankApi, RankController, RankSettings, average_seconds, data_directory
 from .runner import BilliardsRunner
 from .shell import LayoutSession, ShellDesktop
@@ -85,6 +86,7 @@ class DesktopBilliardsApp:
         self.rank = self.make_rank()
         self.rank_offered = False
         self.guide_enabled = True
+        self.leaderboard_dialog = None
         self.result_dialog = None
         self.result_serial = None
         self.update_results = queue.SimpleQueue()
@@ -359,6 +361,7 @@ class DesktopBilliardsApp:
             self.result_serial = table.round_serial
             self.result_dialog = ResultDialog(self.root, {'again': self.play_again,
                                                           'enable_rank': self.enable_rank_from_dialog,
+                                                          'leaderboard': self.show_leaderboard,
                                                           'open_credit': self.open_credit},
                                              config.CREDIT, config.SITE_TEXT)
         dialog = self.result_dialog
@@ -389,6 +392,13 @@ class DesktopBilliardsApp:
             self.result_dialog.close()
             self.result_dialog = None
         self.restart()
+
+    def show_leaderboard(self):
+        if self.leaderboard_dialog is not None and self.leaderboard_dialog.alive():
+            self.leaderboard_dialog.top.lift()
+            self.leaderboard_dialog.top.focus_set()
+            return
+        self.leaderboard_dialog = LeaderboardDialog(self.root, self.rank.fetch_rankings)
 
     def enable_rank_from_dialog(self):
         if self.rank.available and not self.rank.enabled:

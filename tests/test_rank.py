@@ -119,6 +119,30 @@ class ApiTests(unittest.TestCase):
         self.api = RankApi(self.server.url, '9.9.9', timeout=2)
         self.creds = {'device_id': DEVICE, 'secret': SECRET}
 
+    def test_rankings_public_and_signed_with_personal_best_outside_top50(self):
+        data = {'entries': [{'rank': 1, 'avg_ms': 1234, 'is_me': False}],
+                'me': {'rank': 128, 'avg_ms': 9000, 'is_me': True},
+                'generated_at': '2026-11-12T12:00:00Z'}
+        for creds in (None, self.creds):
+            self.server.reply(200, data)
+            self.assertEqual(self.api.rankings(creds), data)
+            method, path, headers, body = self.server.requests[-1]
+            self.assertEqual((method, path, body), ('GET', '/v1/rankings', b''))
+            if creds:
+                self.assertEqual(headers['X-Signature'], sign(SECRET, method, path, headers['X-Timestamp'], body))
+            else:
+                self.assertNotIn('X-Device-Id', headers)
+
+    def test_rankings_rejects_invalid_rows_and_timestamps(self):
+        good = {'entries': [], 'me': None, 'generated_at': '2026-11-12T12:00:00Z'}
+        for changes in ({'entries': [{'rank': 1, 'avg_ms': -1, 'is_me': False}]},
+                        {'me': {'rank': 0, 'avg_ms': 1000, 'is_me': True}},
+                        {'generated_at': 'not a date'}):
+            self.server.reply(200, {**good, **changes})
+            with self.assertRaises(RankError) as caught:
+                self.api.rankings()
+            self.assertEqual(caught.exception.code, 'bad_response')
+
     def test_register_posts_only_the_hash(self):
         self.server.reply(200, {'device_id': DEVICE, 'secret': SECRET})
         self.assertEqual(self.api.register('a' * 64), (DEVICE, SECRET))

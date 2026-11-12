@@ -138,50 +138,41 @@ def render_card(view, *, when=None, credit='', site=''):
             deco.ellipse((cx - r, cy - r, cx + r, cy + r), outline=(105, 221, 179, alpha), width=3 * s)
     canvas.alpha_composite(decoration)
     draw = ImageDraw.Draw(canvas)
-    margin = 72 * s
+    margin = 96 * s
 
     # -- header: icon, name, date --------------------------------------------------
     try:
         with Image.open(LOGO) as source:
-            logo = source.convert('RGBA').resize((104 * s, 104 * s), Image.Resampling.LANCZOS)
-        canvas.alpha_composite(logo, (margin, 64 * s))
+            logo = source.convert('RGBA').resize((80 * s, 80 * s), Image.Resampling.LANCZOS)
+        canvas.alpha_composite(logo, (margin, 82 * s))
     except OSError:
         pass
-    draw.text((margin + 128 * s, 76 * s), '桌面图标台球', font=cjk(58 * s, bold=True), fill=TEXT)
-    draw.text((margin + 130 * s, 146 * s), '把桌面图标打成一局台球', font=cjk(28 * s), fill=MUTED)
+    draw.text((margin + 104 * s, 82 * s), '桌面图标台球', font=cjk(46 * s, bold=True), fill=TEXT)
+    draw.text((margin + 106 * s, 144 * s), '把桌面图标打成一局台球', font=cjk(24 * s), fill=MUTED)
     when = when or time.localtime()
-    draw.text((width - margin, 84 * s), time.strftime('%Y.%m.%d', when), font=numerals(32 * s), fill=MUTED, anchor='ra')
+    draw.text((width - margin, 92 * s), time.strftime('%Y.%m.%d', when), font=numerals(26 * s), fill=MUTED, anchor='ra')
 
     # -- hero ----------------------------------------------------------------------
     centre = width / 2
     if ranked:
         badge_font = cjk(40 * s, bold=True)
         badge_width = _text_width(draw, tier, badge_font) + 96 * s
-        box = (centre - badge_width / 2, 238 * s, centre + badge_width / 2, 316 * s)
+        box = (centre - badge_width / 2, 270 * s, centre + badge_width / 2, 348 * s)
         # Translucent shapes go on their own layer: drawing RGBA fills straight onto the canvas
         # would overwrite the pixels instead of blending with them.
         layer = Image.new('RGBA', canvas.size)
-        _rounded(ImageDraw.Draw(layer), box, 39 * s, fill=tier_colour + (46,), outline=tier_colour + (210,),
-                 width=3 * s)
+        _rounded(ImageDraw.Draw(layer), box, 39 * s, fill=tier_colour + (46,))
         canvas.alpha_composite(layer)
-        draw.text((centre, 277 * s), tier, font=badge_font, fill=tier_colour, anchor='mm')
-        draw.text((centre, 372 * s), '本局全球排名', font=cjk(30 * s), fill=MUTED, anchor='mm')
-        _hero_rank(draw, width, 380 * s, rank['rank'], s, tier_colour)
-        draw.text((centre, 660 * s), f'超过 {rank["percentile"]}% 的全球玩家', font=cjk(46 * s, bold=True),
-                  fill=TEXT, anchor='mm')
-        # percentile bar: the fill length is the share of players the round beat
-        track = (margin + 20 * s, 726 * s, width - margin - 20 * s, 750 * s)
-        _rounded(draw, track, 12 * s, fill=(31, 55, 51, 255))
-        fill_to = track[0] + max(24 * s, (track[2] - track[0]) * rank['percentile'] / 100)
-        bar = _gradient((int(fill_to - track[0]), 24 * s), ACCENT, tier_colour)
-        mask = Image.new('L', bar.size, 0)
-        ImageDraw.Draw(mask).rounded_rectangle((0, 0, bar.width - 1, bar.height - 1), radius=12 * s, fill=255)
-        canvas.paste(bar, (int(track[0]), int(track[1])), mask)
-        knob = fill_to
-        draw.ellipse((knob - 22 * s, 738 * s - 22 * s, knob + 22 * s, 738 * s + 22 * s), fill=(255, 255, 255, 255),
-                     outline=tier_colour, width=6 * s)
-        draw.text((track[0], 786 * s), '新秀', font=cjk(26 * s), fill=MUTED)
-        draw.text((track[2], 786 * s), '球王', font=cjk(26 * s), fill=MUTED, anchor='ra')
+        draw.text((centre, 309 * s), tier, font=badge_font, fill=tier_colour, anchor='mm')
+        draw.text((centre, 408 * s), '本局全球排名', font=cjk(30 * s), fill=MUTED, anchor='mm')
+        _hero_rank(draw, width, 420 * s, rank['rank'], s, tier_colour)
+        parts = (('超过  ', cjk(32 * s)), (f'{rank["percentile"]}%', numerals(110 * s)),
+                 ('  的全球玩家', cjk(32 * s)))
+        lengths = [_text_width(draw, text, font) for text, font in parts]
+        x = (width - sum(lengths)) / 2
+        for (text, font), length in zip(parts, lengths):
+            draw.text((x, 828 * s), text, font=font, fill=ACCENT_LIGHT if '%' in text else TEXT, anchor='ls')
+            x += length
     else:
         draw.text((centre, 300 * s), '平均每颗用时', font=cjk(34 * s), fill=MUTED, anchor='mm')
         value = view['average']
@@ -201,37 +192,42 @@ def render_card(view, *, when=None, credit='', site=''):
     # -- the numbers ---------------------------------------------------------------
     tiles = (('总用时', view['time'], ''), ('平均每颗', view['average'], '秒'),
              ('图标', view['balls'], '颗'), ('击球', view['shots'], '杆'))
-    gap = 24 * s
-    tile_width = (width - 2 * margin - gap) / 2
-    tile_height = 136 * s
+    tile_width = (width - 2 * margin) / 4
+    draw.line((margin, 940 * s, width - margin, 940 * s), fill=(48, 84, 76), width=2 * s)
     for index, (label, value, unit) in enumerate(tiles):
-        x = margin + (index % 2) * (tile_width + gap)
-        y = 836 * s + (index // 2) * (tile_height + gap)
-        _rounded(draw, (x, y, x + tile_width, y + tile_height), 28 * s, fill=CARD + (255,),
-                 outline=(38, 66, 60, 255), width=2 * s)
-        draw.text((x + 32 * s, y + 24 * s), label, font=cjk(26 * s), fill=MUTED)
-        font = _fit_font(draw, value, numerals, 64 * s, tile_width - 64 * s - 70 * s)
-        draw.text((x + 32 * s, y + 114 * s), value, font=font, fill=TEXT, anchor='ls')
+        x = margin + index * tile_width
+        draw.text((x, 986 * s), label, font=cjk(27 * s), fill=MUTED)
+        font = _fit_font(draw, value, numerals, 42 * s, tile_width - 42 * s)
+        draw.text((x, 1080 * s), value, font=font, fill=TEXT, anchor='ls')
         if unit:
-            draw.text((x + 40 * s + _text_width(draw, value, font), y + 114 * s), unit, font=cjk(28 * s),
+            draw.text((x + 8 * s + _text_width(draw, value, font), 1080 * s), unit, font=cjk(24 * s),
                       fill=MUTED, anchor='ls')
 
     if ranked:
-        text = f'个人最佳第 {rank["best_rank"]:,} 名'
-        draw.text((margin, 1186 * s), text, font=cjk(34 * s, bold=True), fill=TEXT, anchor='lm')
+        text = f'个人最佳  {rank["best_rank"]:,} 名'
+        draw.text((margin, 1186 * s), text, font=_fit_font(draw, text, cjk, 34 * s, 690 * s), fill=ACCENT_LIGHT, anchor='lm')
         if rank.get('new_best'):
             font = cjk(30 * s, bold=True)
             pill = _text_width(draw, '新纪录', font) + 56 * s
             x1 = width - margin
+            stem_x = (x1 - pill) / s - 30
+            draw.line(((stem_x + 9) * s, 1205 * s, (stem_x - 5) * s, 1168 * s), fill=GOLD, width=2 * s)
+            for offset in (0, 12, 24):
+                y = 1200 - offset
+                x = stem_x + 7 - offset / 3
+                for side in (-1, 1):
+                    draw.polygon(((x * s, y * s), ((x + side * 12) * s, (y - 5) * s),
+                                  ((x + side * 14) * s, (y - 17) * s), ((x + side * 4) * s, (y - 11) * s)),
+                                 fill=GOLD)
             _rounded(draw, (x1 - pill, 1156 * s, x1, 1216 * s), 30 * s, fill=GOLD + (255,))
             draw.text((x1 - pill / 2, 1186 * s), '新纪录', font=font, fill=(40, 28, 8), anchor='mm')
 
     # -- footer: where the game comes from ----------------------------------------------
     draw.line((margin, 1262 * s, width - margin, 1262 * s), fill=(48, 84, 76, 255), width=2 * s)
     if credit:
-        draw.text((margin, 1296 * s), credit, font=numerals(32 * s), fill=ACCENT, anchor='lm')
+        draw.text((margin, 1296 * s), credit, font=numerals(28 * s), fill=ACCENT, anchor='lm')
     if site:
-        draw.text((width - margin, 1296 * s), site, font=numerals(28 * s), fill=MUTED, anchor='rm')
+        draw.text((width - margin, 1296 * s), site, font=numerals(24 * s), fill=MUTED, anchor='rm')
 
     return canvas.convert('RGB').resize((WIDTH, HEIGHT), Image.Resampling.LANCZOS)
 

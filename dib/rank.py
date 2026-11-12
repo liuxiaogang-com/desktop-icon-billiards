@@ -15,6 +15,8 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import math
+from datetime import datetime
 import os
 import queue
 import threading
@@ -152,6 +154,24 @@ class RankApi:
     def leaderboard(self, limit=50):
         return self._request('GET', f'/v1/leaderboard?limit={int(limit)}')
 
+    def rankings(self, creds=None):
+        data = self._request('GET', '/v1/rankings', creds=creds)
+        def valid_entry(entry):
+            return (isinstance(entry, dict) and type(entry.get('rank')) is int and entry['rank'] > 0
+                    and type(entry.get('avg_ms')) in (int, float) and math.isfinite(entry['avg_ms'])
+                    and entry['avg_ms'] > 0 and type(entry.get('is_me')) is bool)
+        entries = data.get('entries')
+        if (not isinstance(entries, list) or len(entries) > 50 or not all(map(valid_entry, entries))
+                or 'me' not in data or (data['me'] is not None and not valid_entry(data['me']))):
+            raise RankError('bad_response')
+        try:
+            stamp = datetime.fromisoformat(data['generated_at'].replace('Z', '+00:00'))
+            if stamp.tzinfo is None:
+                raise ValueError('missing timezone')
+        except (KeyError, TypeError, ValueError, AttributeError):
+            raise RankError('bad_response') from None
+        return data
+
 
 def data_directory():
     """Persistent per-user settings (unlike the Temp-based runtime directory)."""
@@ -255,6 +275,14 @@ class RankController:
     def close(self):
         if self.thread is not None:
             self.jobs.put(None)
+
+    def fetch_rankings(self):
+        """Called by the leaderboard worker, never by Tk's UI thread."""
+        if not self.available:
+            raise RankError('unavailable')
+        if self.enabled:
+            return self._call(self.api.rankings)
+        return self.api.rankings()
 
     # -- UI thread ---------------------------------------------------------
     def observe(self, table):

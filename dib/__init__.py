@@ -6,4 +6,4 @@ the mouse aims and charges the cue, and the original icon layout is restored
 when the game window closes.
 """
 
-__version__ = '0.1.5'
+__version__ = '0.1.6'
