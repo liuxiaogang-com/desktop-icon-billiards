@@ -12,6 +12,7 @@ import os
 import platform
 import struct
 import threading
+import time
 from collections import OrderedDict
 from ctypes import wintypes as W
 
@@ -36,6 +37,7 @@ INTRO_DURATION = 1.25
 INTRO_STAGGER = 0.025
 RING_LEVELS = 6
 MAX_IMPACT = .23  # the largest ``impact`` value the table produces
+GUIDE_INTERVAL = 1 / 30  # the aim guide is redrawn at most this often
 LUMA_CELL = 8  # wallpaper pixels per cell of the brightness map
 WS_EX_LAYERED = 0x80000
 WS_EX_NOACTIVATE = 0x08000000
@@ -315,6 +317,7 @@ class BilliardsOverlay:
         self.table_windows = {}
         self.guide_enabled = True
         self.guide_key = None
+        self.guide_drawn = 0.0
         self.cue_key = None
         self.charge_key = None
         self.white_frame = None
@@ -794,11 +797,15 @@ class BilliardsOverlay:
         key = (lines_key, tuple((role, (round(x), round(y)), round(radius)) for role, (x, y), radius in circles))             if lines_key else None
         if key == self.guide_key:
             return
+        clock = time.perf_counter()
+        if key is not None and clock - self.guide_drawn < GUIDE_INTERVAL:
+            return  # redrawing the guide is the costliest step: cap it, the next frame catches up
         hwnd = self.table_windows['guide']
         if key is None:
             win32gui.ShowWindow(hwnd, win32con.SW_HIDE)
         else:
             self.present(hwnd, *guide_art(key[0], key[1], self.background_luma))
+            self.guide_drawn = clock
             if self.guide_key is None:
                 self.position_layer(hwnd, win32con.HWND_TOP, win32con.SWP_SHOWWINDOW | win32con.SWP_NOZORDER)
         self.guide_key = key
@@ -838,6 +845,7 @@ class BilliardsOverlay:
                 win32gui.DestroyWindow(hwnd)
         self.table_windows.clear()
         self.guide_key = None
+        self.guide_drawn = 0.0
         self.cue_key = None
         self.charge_key = None
         self.white_position = None

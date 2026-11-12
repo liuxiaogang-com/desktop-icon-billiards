@@ -99,7 +99,7 @@ GUIDE_DARK = {'incoming': (240, 252, 247, 245), 'white': (150, 205, 255, 250), '
 GUIDE_LIGHT = {'incoming': (26, 42, 48, 245), 'white': (10, 70, 168, 250), 'target': (0, 118, 68, 250),
                'casing': (255, 255, 255, 215)}
 BRIGHT_BACKGROUND = 150
-GUIDE_SCALE = 3
+GUIDE_SCALE = 2
 DASH, GAP = 12, 8
 
 
@@ -170,7 +170,7 @@ def guide_art(lines, circles=(), luma=None):
         draw.ellipse((tip[0] - r - s, tip[1] - r - s, tip[0] + r + s, tip[1] + r + s),
                      outline=palette['casing'], width=round(2 * s))
         draw.ellipse((tip[0] - r, tip[1] - r, tip[0] + r, tip[1] + r), outline=color, width=round(2.2 * s))
-    return frame.resize((width, height), Image.Resampling.LANCZOS), left, top
+    return frame.reduce(s), left, top
 
 
 def white_art(radius, shaded=False):
