@@ -27,7 +27,7 @@ from . import diag
 from .config import CREDIT
 from .art import charge_art, cue_art, guide_art, pocket_particles, table_art, white_art
 from .balls import MAX_BALLS, ball_summary, fill_sources, priority_order
-from .display import monitors
+from .display import dpi_context, monitors
 from .shell import ShellDesktop
 from .table import MIN_SHOT_CHARGE, BilliardsMotion
 from .wallpaper import primary_wallpaper
@@ -107,33 +107,56 @@ def _bitmap_image(bitmap):
 
 
 def desktop_listview():
-    """Return the (SHELLDLL_DefView, SysListView32) pair that draws the icons."""
+    """Choose a full-size icon list owned by the desktop's Explorer process."""
+    user32 = ctypes.windll.user32
+    user32.GetShellWindow.argtypes = []
+    user32.GetShellWindow.restype = W.HWND
+    desktop = user32.GetShellWindow()
+    if not desktop:
+        raise RuntimeError('找不到 Windows 桌面窗口，请等待桌面加载完成后重试。')
+    shell_pid = win32process.GetWindowThreadProcessId(desktop)[1]
+    primary = next(m[2] for m in monitors() if m[4])
     found = []
 
+    def covers_primary(hwnd):
+        left, top, right, bottom = win32gui.GetClientRect(hwnd)
+        x0, y0 = win32gui.ClientToScreen(hwnd, (left, top))
+        x1, y1 = win32gui.ClientToScreen(hwnd, (right, bottom))
+        return x0 <= primary[0] < primary[2] <= x1 and y0 <= primary[1] < primary[3] <= y1
+
     def visit(hwnd, _):
-        if win32gui.GetClassName(hwnd) == 'SHELLDLL_DefView':
-            child = win32gui.FindWindowEx(hwnd, 0, 'SysListView32', None)
-            if child:
-                found.append((hwnd, child))
+        if win32gui.GetClassName(hwnd) == 'SHELLDLL_DefView' and covers_primary(hwnd):
+            child = 0
+            while True:
+                child = win32gui.FindWindowEx(hwnd, child, 'SysListView32', None)
+                if not child:
+                    break
+                if covers_primary(child):
+                    found.append((hwnd, child))
         return True
 
     def top(hwnd, _):
-        win32gui.EnumChildWindows(hwnd, visit, None)
+        # Explorer's FolderBrowser also contains DefView/ListView controls, but is
+        # not a desktop. Do not select it just because it contains more items.
+        if (win32gui.GetClassName(hwnd) in ('Progman', 'WorkerW')
+                and win32process.GetWindowThreadProcessId(hwnd)[1] == shell_pid):
+            win32gui.EnumChildWindows(hwnd, visit, None)
         return True
 
-    win32gui.EnumWindows(top, None)
+    with dpi_context(-4):
+        win32gui.EnumWindows(top, None)
     if not found:
-        raise RuntimeError('找不到 Explorer 桌面图标窗口')
+        raise RuntimeError('找不到覆盖主屏幕的 Explorer 桌面图标窗口，请确认 Windows 桌面已加载。')
 
     def score(pair):
-        # Desktop managers and the WorkerW/Progman split can leave several list views;
-        # the real one is visible and holds the icons.
         try:
             return bool(win32gui.IsWindowVisible(pair[1])), listview_count(pair[1])
         except win32gui.error:
             return False, 0
 
-    return max(found, key=score)  # first one wins ties
+    chosen = max(found, key=score)
+    diag.log(f'desktop selection: shell_pid={shell_pid} candidates={found} chosen={chosen}')
+    return chosen
 
 
 def listview_count(hwnd):
@@ -148,7 +171,7 @@ def item_rects(hwnd, indexes):
     count, a changed desktop, or a third-party desktop manager); the caller skips it
     instead of abandoning the whole game.
     """
-    kernel = ctypes.windll.kernel32
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
     kernel.OpenProcess.argtypes = [W.DWORD, W.BOOL, W.DWORD]
     kernel.OpenProcess.restype = W.HANDLE
     kernel.VirtualAllocEx.argtypes = [W.HANDLE, ctypes.c_void_p, ctypes.c_size_t, W.DWORD, W.DWORD]
@@ -157,13 +180,23 @@ def item_rects(hwnd, indexes):
     kernel.ReadProcessMemory.argtypes = kernel.WriteProcessMemory.argtypes
     kernel.VirtualFreeEx.argtypes = [W.HANDLE, ctypes.c_void_p, ctypes.c_size_t, W.DWORD]
     kernel.CloseHandle.argtypes = [W.HANDLE]
-    process = kernel.OpenProcess(0x38, False, win32process.GetWindowThreadProcessId(hwnd)[1])
+    pid = win32process.GetWindowThreadProcessId(hwnd)[1]
+
+    def failure(operation):
+        code = ctypes.get_last_error()
+        diag.log(f'icon bounds: {operation} failed winerror={code} target_pid={pid} hwnd={hwnd} access=0x38')
+        message = f'读取桌面图标位置失败（{operation}，Windows 错误 {code}）。'
+        if code == 5:
+            message += 'Windows 拒绝访问桌面进程，请确认游戏与桌面在同一登录会话运行，并检查安全软件的拦截记录。'
+        return ctypes.WinError(code, message)
+
+    process = kernel.OpenProcess(0x38, False, pid)
     if not process:
-        raise ctypes.WinError()
+        raise failure('OpenProcess')
     pointer = kernel.VirtualAllocEx(process, None, ctypes.sizeof(W.RECT), 0x3000, 4)
     try:
         if not pointer:
-            raise ctypes.WinError()
+            raise failure('VirtualAllocEx')
         count = listview_count(hwnd)
         result = []
         for index in indexes:
@@ -173,12 +206,12 @@ def item_rects(hwnd, indexes):
                     break
                 rect = W.RECT(kind, 0, 0, 0)
                 if not kernel.WriteProcessMemory(process, pointer, ctypes.byref(rect), ctypes.sizeof(rect), None):
-                    raise ctypes.WinError()
+                    raise failure('WriteProcessMemory')
                 if not win32gui.SendMessage(hwnd, 0x100E, index, pointer):
                     row = None
                     break
                 if not kernel.ReadProcessMemory(process, pointer, ctypes.byref(rect), ctypes.sizeof(rect), None):
-                    raise ctypes.WinError()
+                    raise failure('ReadProcessMemory')
                 row.append((rect.left, rect.top, rect.right, rect.bottom))
             if row is not None and not (row[0][2] > row[0][0] and row[0][3] > row[0][1]):
                 row = None  # an empty icon rectangle cannot be drawn

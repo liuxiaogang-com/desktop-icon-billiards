@@ -17,6 +17,20 @@ from pathlib import Path
 ARRANGE_MASK = 0x1 | 0x4
 
 
+def _find_desktop(lookup):
+    """Explorer may not have registered its desktop view yet during startup."""
+    import win32gui
+
+    for attempt in range(5):
+        hwnd, dispatch = lookup()
+        if hwnd and dispatch is not None and win32gui.IsWindow(hwnd):
+            return hwnd, dispatch
+        if attempt < 4:
+            time.sleep(.15)
+    raise RuntimeError('暂时无法连接 Windows 桌面。请等待桌面加载完成后重试；'
+                       '如果使用了桌面替代软件，请先恢复 Windows 桌面。')
+
+
 class PendingRecovery(RuntimeError):
     """A desktop layout snapshot is still active and must be recovered first."""
 
@@ -166,12 +180,14 @@ class ShellDesktop:
         self.shell = shell
         self.shellcon = shellcon
         self.cache = {}
-        self.windows = win32com.client.Dispatch('Shell.Application').Windows()
-        hwnd = win32com.client.VARIANT(pythoncom.VT_I4 | pythoncom.VT_BYREF, 0)
-        dispatch = self.windows.FindWindowSW(
-            0, 0, shellcon.SWC_DESKTOP, hwnd, shellcon.SWFO_NEEDDISPATCH
-        )
-        self.hwnd = int(hwnd.value)
+        def lookup():
+            self.windows = win32com.client.Dispatch('Shell.Application').Windows()
+            hwnd = win32com.client.VARIANT(pythoncom.VT_I4 | pythoncom.VT_BYREF, 0)
+            dispatch = self.windows.FindWindowSW(
+                0, 0, shellcon.SWC_DESKTOP, hwnd, shellcon.SWFO_NEEDDISPATCH)
+            return int(hwnd.value), dispatch
+
+        self.hwnd, dispatch = _find_desktop(lookup)
         provider = dispatch._oleobj_.QueryInterface(pythoncom.IID_IServiceProvider)
         browser = provider.QueryService(
             pywintypes.IID('{4C96BE40-915C-11CF-99D3-00AA004AE837}'),
@@ -191,13 +207,21 @@ class ShellDesktop:
             _iid_ = comtypes.GUID('{1AF3A467-214F-4298-908E-06B03E0B39F9}')
             _methods_ = []
 
-        self.ct_windows = comtypes.client.CreateObject('Shell.Application').Windows()
-        _, ct_dispatch = self.ct_windows.FindWindowSW(0, 0, 8, 1)
+        def ct_lookup():
+            self.ct_windows = comtypes.client.CreateObject('Shell.Application').Windows()
+            hwnd, dispatch = self.ct_windows.FindWindowSW(0, 0, 8, 1)
+            return int(hwnd), dispatch if dispatch else None
+
+        ct_hwnd, ct_dispatch = _find_desktop(ct_lookup)
+        if ct_hwnd != self.hwnd:
+            raise RuntimeError('Windows 桌面在连接过程中发生变化，请重新启动游戏。')
         ct_browser = ct_dispatch.QueryInterface(comtypes.IServiceProvider).QueryService(
             comtypes.GUID('{4C96BE40-915C-11CF-99D3-00AA004AE837}'), IShellBrowser
         )
         out = ctypes.c_void_p()
         self._invoke(ct_browser, 15, [ctypes.POINTER(ctypes.c_void_p)], ctypes.byref(out))
+        if not out.value:
+            raise RuntimeError('Windows 未返回可用的桌面视图，请等待桌面加载完成后重试。')
         self.ct_shellview = ctypes.cast(out, ctypes.POINTER(comtypes.IUnknown))
         self.ct_view = self.ct_shellview.QueryInterface(IFolderView2)
         self.items()
