@@ -15,7 +15,7 @@ def _credit_font(size):
         return ImageFont.load_default(size)
 
 
-def table_art(table, wallpaper=None, credit=None):
+def table_art(table, wallpaper=None, credit=None, pockets=True):
     """Draw the table frame and pockets; returns ``(frame, origin_x, origin_y)``.
 
     ``credit`` is a short source line drawn faintly in the margin below the table, between two
@@ -49,16 +49,21 @@ def table_art(table, wallpaper=None, credit=None):
     draw.rectangle((x0, y0, x0 + width, y0 + height), fill=felt,
                    outline=(105, 221, 179, 184) if minimal else (61, 155, 120, 168 if table.desktop else 238),
                    width=3 if minimal else 5)
-    r = round(table.pocket_radius)
+    # Leave the pocket openings clear so the rail never crosses a basket's mouth.
     for px, py in table.pockets:
-        x = px - origin_x
-        y = py - origin_y
-        # Minimal tables keep the pockets light: a soft ring and a translucent hole, not black discs.
-        draw.ellipse((x - r, y - r, x + r, y + r), fill=(11, 22, 21, 100 if minimal else 248),
-                     outline=(105, 221, 179, 105) if minimal else (153, 116, 77, 255), width=2 if minimal else 3)
-        inset = r * .23
-        draw.ellipse((x - r + inset, y - r + inset, x + r - inset, y + r - inset),
-                     fill=(4, 10, 11, 120 if minimal else 255))
+        x, y, r = px - origin_x, py - origin_y, table.pocket_radius
+        draw.ellipse((x - r, y - r, x + r, y + r), fill=(0, 0, 0, 0))
+    if pockets:
+        r = round(table.pocket_radius)
+        for px, py in table.pockets:
+            x, y = px - origin_x, py - origin_y
+            draw.ellipse((x - r, y - r, x + r, y + r),
+                         fill=(11, 22, 21, 100 if minimal else 248),
+                         outline=(105, 221, 179, 105) if minimal else (153, 116, 77, 255),
+                         width=2 if minimal else 3)
+            inset = r * .23
+            draw.ellipse((x - r + inset, y - r + inset, x + r - inset, y + r - inset),
+                         fill=(4, 10, 11, 120 if minimal else 255))
     if credit:
         font = _credit_font(round(max(11, height / 66)))
         margin = (table.work_area[3] - bottom) if table.desktop else 0
@@ -67,6 +72,24 @@ def table_art(table, wallpaper=None, credit=None):
         draw.text((cx, cy), credit, font=font, anchor='mm', fill=(255, 255, 255, 140),
                   stroke_width=1, stroke_fill=(0, 0, 0, 90))
     return frame, origin_x, origin_y
+
+
+def pocket_art(table, source):
+    """Place the native Shell recycle-bin artwork at the six pocket centres."""
+    pad = max(math.ceil(table.pocket_radius), math.ceil(max(source.size) / 2)) + 5
+    left, top, right, bottom = table.bounds
+    ox, oy = left - pad, top - pad
+    frame = Image.new('RGBA', (right - left + 2 * pad + 1, bottom - top + 2 * pad + 1))
+    bounds = source.getchannel('A').getbbox()
+    if not bounds:
+        raise RuntimeError('Windows 返回了空的回收站图标')
+    # Keep the Shell image's native desktop size and transparent margins.
+    icon = source
+    for px, py in table.pockets:
+        frame.alpha_composite(icon, (round(px - ox - icon.width / 2),
+                                     round(py - oy - icon.height / 2)))
+    return frame, ox, oy
+
 
 
 def charge_art(percent, font):

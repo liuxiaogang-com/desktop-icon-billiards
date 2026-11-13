@@ -4,7 +4,7 @@ import unittest
 
 from PIL import Image, ImageFont, ImageStat
 
-from dib.art import (GUIDE_DARK, GUIDE_LIGHT, charge_art, cue_art, guide_art, guide_palette, pocket_particles,
+from dib.art import (GUIDE_DARK, GUIDE_LIGHT, charge_art, cue_art, guide_art, guide_palette, pocket_art, pocket_particles,
                      table_art, white_art)
 from dib.table import BilliardsMotion
 
@@ -26,6 +26,18 @@ class TableArtTests(unittest.TestCase):
             alpha = frame.getpixel((px - origin_x, py - origin_y))[3]
             self.assertGreater(alpha, 90)
             self.assertLess(alpha, 200)
+
+    def test_wastebaskets_remain_on_a_transparent_layer_at_all_six_pockets(self):
+        game = BilliardsMotion((-1920, -120, 0, 960), [(64, 64)] * 15)
+        source = Image.new('RGBA', (32, 40), (80, 150, 220, 180))
+        original = source.tobytes()
+        frame, ox, oy = pocket_art(game, source)
+        self.assertEqual(source.tobytes(), original)
+        self.assertEqual(len(game.pockets), 6)
+        for x, y in game.pockets:
+            self.assertEqual(frame.getpixel((round(x - ox), round(y - oy))), (80, 150, 220, 180))
+        self.assertEqual(frame.getpixel((frame.width // 2, frame.height // 2))[3], 0)
+        self.assertEqual(frame.getpixel((0, 0))[3], 0)
 
     def test_credit_is_drawn_faintly_in_the_bottom_margin_between_pockets(self):
         game = BilliardsMotion((0, 0, 1600, 1000), [(64, 64)] * 2)

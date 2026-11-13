@@ -30,5 +30,19 @@ class CollisionCacheTests(unittest.TestCase):
                          RING_LEVELS * BALL_CANVAS * BALL_CANVAS * 4)
 
 
+class TableVisibilityTests(unittest.TestCase):
+    def test_surface_toggle_switches_between_round_pockets_and_recycle_bins(self):
+        overlay = object.__new__(BilliardsOverlay)
+        overlay.table_windows = {'rail': 11, 'pockets': 12}
+        with patch('dib.overlay.win32gui.ShowWindow') as show, \
+                patch.object(overlay, 'position_layer'):
+            overlay.set_felt(False)
+            self.assertFalse(overlay.felt_visible)
+            overlay.set_felt(True)
+            self.assertTrue(overlay.felt_visible)
+        self.assertEqual([call.args for call in show.call_args_list],
+                         [(11, 0), (12, 4), (11, 4), (12, 0)])
+
+
 if __name__ == '__main__':
     unittest.main()

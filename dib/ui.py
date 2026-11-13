@@ -92,6 +92,11 @@ class DesktopBilliardsApp:
         self.update_results = queue.SimpleQueue()
         self.settings = self.make_settings()
         self.felt_enabled = bool(self.settings.get('felt', True))
+        self.stealth_announced = False
+        self.toolbar_hidden = False
+        self.toolbar_region = None
+        self.toolbar_hover_since = None
+        self.toolbar_leave_since = None
         self.panel = panel = MainPanel(root, config.VERSION, {
             'restart': self.restart, 'toggle_guide': self.toggle_guide, 'toggle_rank': self.toggle_rank,
             'check_updates': lambda: self.check_updates(manual=True), 'donate': self.show_donation,
@@ -314,6 +319,7 @@ class DesktopBilliardsApp:
                 if not self.rank_offered:
                     self.rank_offered = True
                     self.root.after(800, self.offer_rank)
+                self.update_toolbar()
                 overlay = self.runner.overlay
                 table = overlay.table
                 state = table.state
@@ -347,12 +353,68 @@ class DesktopBilliardsApp:
             self.runner.overlay.guide_enabled = self.guide_enabled
 
     def toggle_felt(self):
-        """Show or hide the table frame, pockets and wallpaper panel."""
+        """Show or hide the table frame and wallpaper panel, keeping the wastebaskets."""
         self.felt_enabled = not self.felt_enabled
+        self.stealth_announced = False
         self.settings.update(felt=self.felt_enabled)
         self.refresh_buttons()
         if self.runner:
             self.runner.overlay.want_felt = self.felt_enabled
+
+    def show_toolbar(self):
+        if self.toolbar_hidden:
+            self.root.deiconify()
+            self.toolbar_hidden = False
+        self.toolbar_hover_since = self.toolbar_leave_since = None
+
+    def update_toolbar(self):
+        """Keep the original toolbar area discoverable without hiding game windows."""
+        if self.felt_enabled:
+            self.show_toolbar()
+            return
+        if not self.stealth_announced:
+            self.stealth_announced = True
+            self.show_toolbar()
+            messagebox.showinfo('隐藏台面模式',
+                                '按住 Shift：显示球杆和辅助线\n'
+                                '鼠标停在工具条原位置：恢复工具条\n'
+                                'Ctrl+Alt+X：退出游戏',  parent=self.root)
+            self.toolbar_leave_since = time.monotonic()
+        # Keep dialogs and toolbar button interactions accessible.
+        if self.root.grab_current() is not None or any(
+                isinstance(child, tk.Toplevel) and child.winfo_viewable()
+                for child in self.root.winfo_children()):
+            self.show_toolbar()
+            return
+        now = time.monotonic()
+        if not self.toolbar_hidden:
+            x, y = self.root.winfo_rootx(), self.root.winfo_rooty()
+            self.toolbar_region = (x, y, x + self.root.winfo_width(), y + self.root.winfo_height())
+        if self.toolbar_region is None:
+            return
+        x, y = self.root.winfo_pointerxy()
+        left, top, right, bottom = self.toolbar_region
+        inside = left <= x < right and top <= y < bottom
+        button = win32con.VK_RBUTTON if win32api.GetSystemMetrics(23) else win32con.VK_LBUTTON
+        if win32api.GetAsyncKeyState(button) & 0x8000:
+            self.toolbar_hover_since = self.toolbar_leave_since = None
+            return
+        if inside:
+            self.toolbar_leave_since = None
+            if self.toolbar_hidden:
+                if self.toolbar_hover_since is None:
+                    self.toolbar_hover_since = now
+                elif now - self.toolbar_hover_since >= .3:
+                    self.show_toolbar()
+        else:
+            self.toolbar_hover_since = None
+            if not self.toolbar_hidden:
+                if self.toolbar_leave_since is None:
+                    self.toolbar_leave_since = now
+                elif now - self.toolbar_leave_since >= 1:
+                    self.remember_position()
+                    self.root.withdraw()
+                    self.toolbar_hidden = True
 
     # -- round result ------------------------------------------------------
     def update_result_dialog(self, overlay, table, finished):
@@ -405,6 +467,7 @@ class DesktopBilliardsApp:
             self.toggle_rank()
 
     def fail(self, error):
+        self.show_toolbar()
         try:
             self.restore()
         except Exception as exc:

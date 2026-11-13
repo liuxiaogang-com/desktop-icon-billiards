@@ -25,7 +25,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from . import diag
 from .config import CREDIT
-from .art import charge_art, cue_art, guide_art, pocket_particles, table_art, white_art
+from .art import charge_art, cue_art, guide_art, pocket_art, pocket_particles, table_art, white_art
 from .balls import MAX_BALLS, ball_summary, fill_sources, priority_order
 from .display import dpi_context, monitors
 from .shell import ShellDesktop
@@ -336,6 +336,7 @@ class BilliardsOverlay:
         self.hidden = False
         self.want_felt = True
         self.felt_visible = True
+        self.aim_visible = True
         self.table = None
         self.windows = []
         self.surfaces = {}
@@ -485,6 +486,11 @@ class BilliardsOverlay:
                     (max(1, wallpaper.width // LUMA_CELL), max(1, wallpaper.height // LUMA_CELL)),
                     Image.Resampling.BOX)
             self.rail_frame = table_art(self.table, wallpaper, CREDIT)
+            icon_sizes = sorted(min(icon[2] - icon[0], icon[3] - icon[1]) for icon, _ in self.rects)
+            icon_size = icon_sizes[len(icon_sizes) // 2]
+            recycle_bin = artwork('::{645FF040-5081-101B-9F08-00AA002F954E}', icon_size)
+            recycle_bin.thumbnail((icon_size, icon_size), Image.Resampling.LANCZOS)
+            self.pocket_frame = pocket_art(self.table, recycle_bin)
         finally:
             comtypes.CoUninitialize()
 
@@ -575,6 +581,9 @@ class BilliardsOverlay:
             win32gui.ShowWindow(self.listview, win32con.SW_HIDE)
             for hwnd in self.windows:
                 win32gui.ShowWindow(hwnd, shown)
+            pockets = self.table_windows.get('pockets')
+            if pockets and not self.want_felt:
+                win32gui.ShowWindow(pockets, shown)
             rail = self.table_windows.get('rail')
             if rail and self.want_felt:
                 win32gui.ShowWindow(rail, shown)
@@ -588,7 +597,7 @@ class BilliardsOverlay:
         diag.log(f'game {"hidden" if hidden else "shown again"}')
 
     def set_felt(self, visible):
-        """Show or hide the table frame, pockets and wallpaper panel; the balls keep rolling on the desktop."""
+        """Show or hide the table frame and wallpaper panel, keeping the wastebaskets; the balls keep rolling on the desktop."""
         rail = self.table_windows.get('rail')
         if rail is None:
             return
@@ -597,7 +606,14 @@ class BilliardsOverlay:
             self.position_layer(rail, win32con.HWND_BOTTOM)
         else:
             win32gui.ShowWindow(rail, win32con.SW_HIDE)
+        pockets = self.table_windows.get('pockets')
+        if pockets:
+            win32gui.ShowWindow(pockets, win32con.SW_HIDE if visible else win32con.SW_SHOWNOACTIVATE)
         self.felt_visible = visible
+        self.cue_key = self.guide_key = self.charge_key = None
+        for part in ('cue', 'guide', 'charge'):
+            if part in self.table_windows:
+                win32gui.ShowWindow(self.table_windows[part], win32con.SW_HIDE)
 
     def draw(self, now, dt):
         if self.desktop.get_geometry() != self.geometry:
@@ -623,6 +639,7 @@ class BilliardsOverlay:
             self.update_pointer(now)
             self.table.step(dt, now)
             self.draw_balls()
+        self.aim_visible = self.felt_visible or bool(win32api.GetAsyncKeyState(win32con.VK_SHIFT) & 0x8000)
         self.draw_table()
         self.draw_guide()
         self.draw_charge()
@@ -769,6 +786,7 @@ class BilliardsOverlay:
     def stack_table_windows(self):
         """Keep the wallpaper behind the icons and the shot controls above them."""
         self.position_layer(self.table_windows['guide'], win32con.HWND_BOTTOM)
+        self.position_layer(self.table_windows['pockets'], win32con.HWND_BOTTOM)
         self.position_layer(self.table_windows['rail'], win32con.HWND_BOTTOM)
         for part in ('white', 'cue', 'charge'):
             if part in self.table_windows:
@@ -781,6 +799,11 @@ class BilliardsOverlay:
             self.present(hwnd, *self.rail_frame)
             self.rail_frame = None
             self.position_layer(hwnd, win32con.HWND_BOTTOM, win32con.SWP_SHOWWINDOW)
+            pockets = self.table_window('pockets')
+            self.present(pockets, *self.pocket_frame)
+            self.pocket_frame = None
+            self.position_layer(pockets, win32con.HWND_BOTTOM)
+            self.position_layer(hwnd, win32con.HWND_BOTTOM)
             self.table_window('guide')
         white = table.white
         if 'white' not in self.table_windows:
@@ -800,7 +823,7 @@ class BilliardsOverlay:
                     self.position_layer(hwnd, win32con.HWND_TOP,
                                         win32con.SWP_SHOWWINDOW | win32con.SWP_NOZORDER)
                 self.white_position = position
-        cue = table.cue()
+        cue = table.cue() if self.aim_visible else None
         if cue is None:
             if self.cue_key is not None:
                 win32gui.ShowWindow(self.table_windows['cue'], win32con.SW_HIDE)
@@ -826,7 +849,7 @@ class BilliardsOverlay:
         return self.luma_map.getpixel((px, py)) if 0 <= px < width and 0 <= py < height else None
 
     def draw_guide(self):
-        lines, circles = self.table.aim_preview() if self.guide_enabled and self.transition is None else ((), ())
+        lines, circles = self.table.aim_preview() if self.aim_visible and self.guide_enabled and self.transition is None else ((), ())
         rounded = [(role, (round(x0), round(y0)), (round(x1), round(y1)))
                    for role, (x0, y0), (x1, y1) in lines]
         lines_key = tuple((role, start, end) for role, start, end in rounded if start != end)
@@ -887,6 +910,11 @@ class BilliardsOverlay:
         self.white_position = None
 
     def present(self, hwnd, frame, x, y):
+        if not self.felt_visible and hwnd in (self.table_windows.get('cue'),
+                                            self.table_windows.get('guide'),
+                                            self.table_windows.get('charge')):
+            frame = frame.copy()
+            frame.putalpha(frame.getchannel('A').point([value // 2 for value in range(256)]))
         left, top, right, bottom = self.primary_bounds
         x0, y0 = max(left, x), max(top, y)
         x1, y1 = min(right, x + frame.width), min(bottom, y + frame.height)
