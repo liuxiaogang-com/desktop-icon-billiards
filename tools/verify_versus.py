@@ -46,6 +46,18 @@ REPORT = pathlib.Path(os.environ['TEMP']) / 'dib_live_report.json'
 ERROR_LOG = pathlib.Path(os.environ['TEMP']) / 'DesktopIconBilliards' / 'error.log'
 
 
+def child_zorder(parent):
+    """Map child hwnd -> index in the z-order (0 = topmost)."""
+    order = {}
+    hwnd = ctypes.windll.user32.GetWindow(parent, 5)      # GW_CHILD
+    index = 0
+    while hwnd and index < 500:
+        order[hwnd] = index
+        hwnd = ctypes.windll.user32.GetWindow(hwnd, 2)    # GW_HWNDNEXT
+        index += 1
+    return order
+
+
 def capture_desktop_layer(hwnd, path):
     """Render the desktop window itself, layered child windows included.
 
@@ -172,6 +184,25 @@ def main():
                  balls=len(overlay.table.icons), link=overlay.link is not None)
             report['round'].update(role=overlay.versus_role, scale=overlay.view.scale,
                                    versus_error=overlay.versus_error)
+            # The felt layer is an opaque blurred wallpaper, so it must sit *below* the cue
+            # ball and the cue. A table swap recreates the windows; without an explicit
+            # restack they land in creation order and the felt hides both.
+            try:
+                order = child_zorder(overlay.parent)
+                windows = overlay.table_windows
+                layers = {'guide': order.get(windows.get('guide')),
+                          'rail': order.get(windows.get('rail')),
+                          'white': order.get(windows.get('white')),
+                          'cue': order.get(windows.get('cue'))}
+                report['layers'] = layers
+                note('layer_order', **layers)
+                rail = layers['rail']
+                if rail is not None and layers['white'] is not None and rail <= layers['white']:
+                    report['errors'].append('the felt layer is above the cue ball')
+                if rail is not None and layers['cue'] is not None and rail <= layers['cue']:
+                    report['errors'].append('the felt layer is above the cue')
+            except Exception as error:
+                report['warnings'].append(f'layer order: {error!r}')
             root.after(2200, step_capture)
         except Exception as error:
             report['errors'].append(f'check: {error!r}')

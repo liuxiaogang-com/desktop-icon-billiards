@@ -385,6 +385,8 @@ class BilliardsOverlay:
         # The traffic pump lives in :mod:`dib.versus_sync` so it can be tested headlessly.
         self.link = None
         self.nack_note = ''
+        # Set when a table swap recreates the layered windows, so they get restacked once.
+        self.zorder_dirty = False
         # The Tk thread only leaves a request here; the animation thread owns every window,
         # so it performs the swap itself, exactly like ``want_hidden`` and ``want_felt``.
         self._versus_request = None
@@ -660,6 +662,9 @@ class BilliardsOverlay:
         self.ring_frames = {level: self.ring_layer(level) for level in range(1, RING_LEVELS + 1)}
         self.refresh_rail()
         self.show_table_windows(len(table.icons))
+        # The table windows were just destroyed and will be recreated over the next frames;
+        # restack them once they all exist so the felt never covers the ball and the cue.
+        self.zorder_dirty = True
         self.link = (VersusLink(table, self.versus_session, self.versus_role)
                      if self.versus_role is not None and self.versus_session is not None else None)
 
@@ -842,6 +847,9 @@ class BilliardsOverlay:
         self.draw_table()
         self.draw_guide()
         self.draw_charge()
+        if self.zorder_dirty and {'rail', 'guide', 'white'} <= set(self.table_windows):
+            self.zorder_dirty = False
+            self.stack_table_windows()
 
     def restart_table(self):
         """Reset the round here, or ask the host to do it when this client only mirrors."""
@@ -1002,9 +1010,18 @@ class BilliardsOverlay:
                               win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE | flags)
 
     def stack_table_windows(self):
-        """Keep the wallpaper behind the icons and the shot controls above them."""
-        self.position_layer(self.table_windows['guide'], win32con.HWND_BOTTOM)
-        self.position_layer(self.table_windows['rail'], win32con.HWND_BOTTOM)
+        """Keep the wallpaper behind the icons and the shot controls above them.
+
+        Called from ``show()`` for a fresh game and again from ``draw()`` after a table swap:
+        ``install_table()`` recreates these windows, and new children land in creation order,
+        which would leave the opaque felt layer above the cue ball and the cue.
+        """
+        guide = self.table_windows.get('guide')
+        rail = self.table_windows.get('rail')
+        if guide is not None:
+            self.position_layer(guide, win32con.HWND_BOTTOM)
+        if rail is not None:
+            self.position_layer(rail, win32con.HWND_BOTTOM)
         for part in ('white', 'cue', 'charge'):
             if part in self.table_windows:
                 self.position_layer(self.table_windows[part], win32con.HWND_TOP)
