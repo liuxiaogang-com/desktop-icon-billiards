@@ -8,7 +8,7 @@ Windows 10 / 11 x64 · 单文件 EXE · MIT
 
 ## 下载
 
-Windows 版 v0.1.6 为单文件 EXE。[GitHub 下载](https://github.com/liuxiaogang-com/desktop-icon-billiards/releases/download/v0.1.6/DesktopIconBilliards-0.1.6-win-x64.exe) · [CNB 国内镜像](https://cnb.cool/liuxiaogang/desktop-icon-billiards/-/releases/download/v0.1.6/DesktopIconBilliards-0.1.6-win-x64.exe)
+Windows 版 v0.2.0 为单文件 EXE。[GitHub 下载](https://github.com/liuxiaogang-com/desktop-icon-billiards/releases/download/v0.2.0/DesktopIconBilliards-0.2.0-win-x64.exe) · [CNB 国内镜像](https://cnb.cool/liuxiaogang/desktop-icon-billiards/-/releases/download/v0.2.0/DesktopIconBilliards-0.2.0-win-x64.exe)
 
 `desktop-icon-billiards` 的源码和发布附件在两个平台同步。[GitHub 仓库](https://github.com/liuxiaogang-com/desktop-icon-billiards) · [CNB 国内镜像仓库](https://cnb.cool/liuxiaogang/desktop-icon-billiards)
 
