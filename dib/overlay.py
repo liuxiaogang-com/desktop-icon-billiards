@@ -284,8 +284,10 @@ class LayerSurface:
 
     def present(self, frame, x=None, y=None):
         if x is not None:
-            # Layered child windows take coordinates relative to their parent.
-            self.point = (x, y)
+            # Layered child windows take whole pixels relative to their parent. The versus
+            # viewport maps logical coordinates through a scale, so callers can hand us
+            # floats; Win32 refuses them here rather than complaining later.
+            self.point = (int(round(x)), int(round(y)))
         if frame is not self.last_frame:
             data = frame.convert('RGBa').tobytes('raw', 'BGRa')
             ctypes.memmove(self.bits, data, len(data))
@@ -1114,6 +1116,7 @@ class BilliardsOverlay:
 
         left, top, right, bottom = self.primary_bounds
         x, y = self.view.to_parent(origin[0], origin[1])
+        x, y = round(x), round(y)
         gap = self.charge_font.size
         x = x + gap if x + gap + width <= right else x - gap - width
         y = y + gap if y + gap + height <= bottom else y - gap - height
@@ -1138,6 +1141,9 @@ class BilliardsOverlay:
         self.white_position = None
 
     def present(self, hwnd, frame, x, y):
+        # Win32 wants whole pixels and Pillow wants whole crop boxes. The letterboxed versus
+        # viewport produces floats, so normalise once here instead of auditing every caller.
+        x, y = int(round(x)), int(round(y))
         left, top, right, bottom = self.primary_bounds
         x0, y0 = max(left, x), max(top, y)
         x1, y1 = min(right, x + frame.width), min(bottom, y + frame.height)

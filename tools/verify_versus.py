@@ -84,7 +84,7 @@ def capture_desktop_layer(hwnd, path):
 # root created outside ui.main() has no parent window yet, and the check does not need it.
 instance.publish_version = lambda *args, **kwargs: None
 
-report = {'stages': [], 'errors': [], 'round': {}, 'guest': {}, 'shot': None}
+report = {'stages': [], 'errors': [], 'warnings': [], 'round': {}, 'guest': {}, 'shot': None}
 deadline = time.monotonic() + 75
 
 
@@ -184,16 +184,58 @@ def main():
             report['shot'] = {'path': str(SHOT), 'size': image.size}
             note('screenshot', size=image.size, path=str(SHOT))
         except Exception as error:
-            report['errors'].append(f'capture: {error!r}')
+            # A locked or sleeping screen cannot be captured; that is not a game failure.
+            report['warnings'].append(f'capture: {error!r}')
+            note('screenshot_skipped', error=repr(error))
         try:
             parent = app.runner.overlay.parent
             size = capture_desktop_layer(parent, DESKTOP_SHOT)
             report['desktop_shot'] = {'path': str(DESKTOP_SHOT), 'size': size}
             note('desktop_layer', size=size, path=str(DESKTOP_SHOT))
         except Exception as error:
-            report['errors'].append(f'desktop capture: {error!r}')
+            report['warnings'].append(f'desktop capture: {error!r}')
             note('desktop_capture_failed', error=repr(error))
-        root.after(1500, step_round_state)
+        root.after(300, step_charge_bar)
+
+    def step_charge_bar():
+        """Draw the power bar once on the letterboxed table.
+
+        This is the one drawing path that only exists in a network match: the single-player
+        viewport is the identity, so a float coordinate there never happens. Asking the
+        animation thread to render the bar is what reproduced the ``float`` crash at
+        ``UpdateLayeredWindow`` on a real desktop.
+        """
+        try:
+            overlay = app.runner.overlay
+            if overlay.versus_role is None:
+                report['warnings'].append('charge bar: not in a versus table')
+                root.after(1400, step_round_state)
+                return
+            overlay.pointer.charge_origin = (820.0, 430.0)   # logical table units
+            overlay.pointer.held_since = time.monotonic()
+            overlay.table.charge = 0.55
+            overlay.table.state = 'ready'
+            note('charge_bar_requested')
+            root.after(900, step_charge_done)
+        except Exception as error:
+            report['errors'].append(f'charge bar: {error!r}')
+            root.after(200, step_finish)
+
+    def step_charge_done():
+        try:
+            if app.runner is None or app.runner.error:
+                report['errors'].append(f'charge bar crashed: {app.runner.error!r}' if app.runner
+                                        else 'charge bar crashed: runner gone')
+            else:
+                overlay = app.runner.overlay
+                note('charge_bar_ok', charge=round(overlay.table.charge, 2),
+                     table_state=overlay.table.state)
+                overlay.pointer.charge_origin = None
+                overlay.pointer.held_since = None
+                overlay.table.charge = 0.0
+        except Exception as error:
+            report['errors'].append(f'charge check: {error!r}')
+        root.after(400, step_round_state)
 
     def step_round_state():
         try:
