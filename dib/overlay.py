@@ -687,6 +687,13 @@ class BilliardsOverlay:
             return True
         return self.link.pointer_active()
 
+    def cue_visible(self):
+        """The cue and the aim guide belong to whoever holds the table."""
+        if self.link is None:
+            return True
+        table = self.table
+        return int(getattr(table, 'turn', 0)) == int(getattr(table, 'local_side', 0))
+
     def advance_exits(self, dt):
         """Age the sinking icons on the mirroring client, which never runs the physics."""
         table = self.table
@@ -1029,6 +1036,9 @@ class BilliardsOverlay:
                                         win32con.SWP_SHOWWINDOW | win32con.SWP_NOZORDER)
                 self.white_position = position
         cue = table.cue()
+        if cue is not None and not self.cue_visible():
+            # Waiting for the opponent: no cue, no line, nothing that looks shootable.
+            cue = None
         if cue is None:
             if self.cue_key is not None:
                 win32gui.ShowWindow(self.table_windows['cue'], win32con.SW_HIDE)
@@ -1059,7 +1069,8 @@ class BilliardsOverlay:
         return source.getpixel((px, py)) if 0 <= px < width and 0 <= py < height else None
 
     def draw_guide(self):
-        lines, circles = self.table.aim_preview() if self.guide_enabled and self.transition is None else ((), ())
+        lines, circles = self.table.aim_preview() if (self.guide_enabled and self.transition is None
+                                                      and self.cue_visible()) else ((), ())
         rounded = [(role, (round(x0), round(y0)), (round(x1), round(y1)))
                    for role, (x0, y0), (x1, y1) in lines]
         lines_key = tuple((role, start, end) for role, start, end in rounded if start != end)

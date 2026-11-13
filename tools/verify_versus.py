@@ -41,8 +41,44 @@ from dib.table import LOGICAL_BOUNDS, VERSUS_BALLS, BilliardsMotion   # noqa: E4
 from dib.versus_sync import VersusLink                 # noqa: E402
 
 SHOT = pathlib.Path(os.environ['TEMP']) / 'dib_live_shot.png'
+DESKTOP_SHOT = pathlib.Path(os.environ['TEMP']) / 'dib_live_desktop.png'
 REPORT = pathlib.Path(os.environ['TEMP']) / 'dib_live_report.json'
 ERROR_LOG = pathlib.Path(os.environ['TEMP']) / 'DesktopIconBilliards' / 'error.log'
+
+
+def capture_desktop_layer(hwnd, path):
+    """Render the desktop window itself, layered child windows included.
+
+    A plain screen grab only shows whatever windows happen to be on top; the game draws as
+    layered children of the desktop, so the table is only visible on the desktop layer.
+    """
+    import ctypes
+    import win32gui
+    import win32ui
+    from PIL import Image
+
+    left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+    width, height = right - left, bottom - top
+    window_dc = win32gui.GetWindowDC(hwnd)
+    source = win32ui.CreateDCFromHandle(window_dc)
+    memory = source.CreateCompatibleDC()
+    bitmap = win32ui.CreateBitmap()
+    bitmap.CreateCompatibleBitmap(source, width, height)
+    memory.SelectObject(bitmap)
+    try:
+        # PW_RENDERFULLCONTENT = 2: required for layered/DirectComposition children.
+        ctypes.windll.user32.PrintWindow(hwnd, memory.GetSafeHdc(), 2)
+        info = bitmap.GetInfo()
+        bits = bitmap.GetBitmapBits(True)
+        image = Image.frombuffer('RGB', (info['bmWidth'], info['bmHeight']), bits,
+                                 'raw', 'BGRX', 0, 1)
+        image.save(path)
+        return image.size
+    finally:
+        win32gui.DeleteObject(bitmap.GetHandle())
+        memory.DeleteDC()
+        source.DeleteDC()
+        win32gui.ReleaseDC(hwnd, window_dc)
 
 # ``publish_version`` stamps a window property used for multi-version handoff; a harness
 # root created outside ui.main() has no parent window yet, and the check does not need it.
@@ -149,6 +185,14 @@ def main():
             note('screenshot', size=image.size, path=str(SHOT))
         except Exception as error:
             report['errors'].append(f'capture: {error!r}')
+        try:
+            parent = app.runner.overlay.parent
+            size = capture_desktop_layer(parent, DESKTOP_SHOT)
+            report['desktop_shot'] = {'path': str(DESKTOP_SHOT), 'size': size}
+            note('desktop_layer', size=size, path=str(DESKTOP_SHOT))
+        except Exception as error:
+            report['errors'].append(f'desktop capture: {error!r}')
+            note('desktop_capture_failed', error=repr(error))
         root.after(1500, step_round_state)
 
     def step_round_state():
@@ -209,10 +253,15 @@ def main():
         REPORT.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
         print('REPORT', REPORT, flush=True)
 
-    compared = ('state', 'turn', 'scores', 'shots', 'white')
+    compared = ('state', 'turn', 'scores', 'shots')
+    fuzzy = ('white',)          # snapshot coordinates are rounded, so allow a tenth
     host = report['round']
     guest = report['guest']
     mismatched = [key for key in compared if host.get(key) != guest.get(key)]
+    for key in fuzzy:
+        left, right = host.get(key) or [0, 0], guest.get(key) or [0, 0]
+        if any(abs(a - b) > 0.2 for a, b in zip(left, right)):
+            mismatched.append(key)
     ok = (host.get('role') == 'host' and host.get('shots', 0) >= 1
           and not mismatched and not report['errors'] and not report['error_log'])
     print('VERIFY', 'OK' if ok else 'FAILED',

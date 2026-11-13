@@ -7,9 +7,10 @@ clients build, wires them through real loopback sockets, and runs the pump in
 """
 import time
 import unittest
+from types import SimpleNamespace
 
 from dib import netplay
-from dib.overlay import Viewport
+from dib.overlay import BilliardsOverlay, Viewport
 from dib.table import LOGICAL_BOUNDS, VERSUS_BALLS, BilliardsMotion
 from dib.versus_sync import VersusLink
 
@@ -131,6 +132,26 @@ class ViewportTests(unittest.TestCase):
         self.assertEqual(view.to_parent(321.5, 456.25), (321.5, 456.25))
         self.assertEqual(view.to_table(321.5, 456.25), (321.5, 456.25))
         self.assertEqual(view.length(43.24), 43.24)
+
+
+class CueOwnershipTests(unittest.TestCase):
+    """Only the player holding the table may see a cue and an aim line."""
+
+    @staticmethod
+    def overlay_for(turn, side, linked=True):
+        overlay = object.__new__(BilliardsOverlay)
+        overlay.table = SimpleNamespace(turn=turn, local_side=side)
+        overlay.link = object() if linked else None
+        return overlay
+
+    def test_solo_always_shows_the_cue(self):
+        self.assertTrue(self.overlay_for(0, 0, linked=False).cue_visible())
+
+    def test_cue_follows_the_turn(self):
+        self.assertTrue(self.overlay_for(0, 0).cue_visible())    # host, host's turn
+        self.assertFalse(self.overlay_for(1, 0).cue_visible())   # host waiting
+        self.assertTrue(self.overlay_for(1, 1).cue_visible())    # guest, guest's turn
+        self.assertFalse(self.overlay_for(0, 1).cue_visible())   # guest waiting
 
 
 class LiveMatchTests(unittest.TestCase):

@@ -5,6 +5,7 @@
 - 修复启动后第一帧刷新统计栏时报 `'DesktopBilliardsApp' object has no attribute 'remaining_title'` 并退出的问题。
 - 修复切换到联机台面的那一帧绘制越界（`self.poses` 未按窗口数初始化）导致的崩溃。
 - 修复逻辑台面以浮点尺寸传给图稿生成、导致无法进入对战的问题（`'float' object cannot be interpreted as an integer`）。
+- 对战中轮到对手时，本端隐藏球杆与瞄准辅助线，不再出现「看着能打其实不能打」的错觉。
 - 新增 UI 属性绑定静态检查（这层测试之前只能在真机上暴露），以及一个实时对战联调脚本 `tools/verify_versus.py`。
 
 v0.2.0 的功能（局域网双人对战）不变：
