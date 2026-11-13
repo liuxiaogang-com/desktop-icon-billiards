@@ -19,6 +19,8 @@ class StealthToolbarTests(unittest.TestCase):
         app.felt_enabled = False
         app.stealth_announced = False
         app.toolbar_hidden = False
+        app.toolbar_eye = Mock()
+        app.show_toolbar_eye = Mock()
         app.toolbar_region = None
         app.toolbar_hover_since = app.toolbar_leave_since = None
         app.remember_position = Mock()
@@ -61,3 +63,20 @@ class StealthToolbarTests(unittest.TestCase):
         app.update_toolbar()
         self.assertFalse(app.toolbar_hidden)
         app.root.deiconify.assert_called_once()
+
+    @patch('dib.ui.win32api.GetAsyncKeyState', return_value=0)
+    def test_eye_hover_restores_toolbar_without_click(self, keys):
+        app = self.app()
+        app.toolbar_hidden = True
+        app.reveal_toolbar()
+        app.root.deiconify.assert_called_once()
+        app.toolbar_eye.withdraw.assert_called_once()
+        self.assertFalse(app.toolbar_hidden)
+
+    @patch('dib.ui.win32api.GetAsyncKeyState', return_value=0x8000)
+    def test_eye_hover_during_shot_keeps_toolbar_hidden(self, keys):
+        app = self.app()
+        app.toolbar_hidden = True
+        app.reveal_toolbar()
+        app.root.deiconify.assert_not_called()
+        self.assertTrue(app.toolbar_hidden)

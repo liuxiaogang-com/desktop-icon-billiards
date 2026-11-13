@@ -94,6 +94,7 @@ class DesktopBilliardsApp:
         self.felt_enabled = bool(self.settings.get('felt', True))
         self.stealth_announced = False
         self.toolbar_hidden = False
+        self.toolbar_eye = None
         self.toolbar_region = None
         self.toolbar_hover_since = None
         self.toolbar_leave_since = None
@@ -208,6 +209,8 @@ class DesktopBilliardsApp:
         label = ttk.Label(body, image=photo)
         label.image = photo
         label.pack()
+        ttk.Label(body, text='赞赏是对这个项目的自愿支持，不包含额外功能或专属技术支持。',
+                  style='Table.TLabel', wraplength=340, justify='center').pack(pady=(10, 0))
         ttk.Button(body, text='关闭', command=dialog.destroy, style='Table.TButton').pack(pady=(10, 0))
         dialog.bind('<Escape>', lambda event: dialog.destroy())
 
@@ -361,7 +364,34 @@ class DesktopBilliardsApp:
         if self.runner:
             self.runner.overlay.want_felt = self.felt_enabled
 
+    def reveal_toolbar(self, event=None):
+        button = win32con.VK_RBUTTON if win32api.GetSystemMetrics(23) else win32con.VK_LBUTTON
+        if not win32api.GetAsyncKeyState(button) & 0x8000:
+            self.show_toolbar()
+
+    def show_toolbar_eye(self):
+        if self.toolbar_eye is None:
+            eye = self.toolbar_eye = tk.Toplevel(self.root)
+            eye.withdraw()
+            eye.overrideredirect(True)
+            eye.attributes('-topmost', True)
+            eye.attributes('-transparentcolor', '#010203')
+            eye.attributes('-alpha', .75)
+            canvas = tk.Canvas(eye, width=36, height=28, bg='#010203',
+                               highlightthickness=0, bd=0)
+            canvas.pack()
+            # Outlined eye with a pupil, readable on both light and dark wallpapers.
+            shape = (5, 14, 11, 7, 18, 5, 25, 7, 31, 14, 25, 21, 18, 23, 11, 21)
+            canvas.create_polygon(*shape, smooth=True, fill='#263d45', outline='#e1e9eb', width=2)
+            canvas.create_oval(14, 10, 22, 18, fill='#e1e9eb', outline='')
+            canvas.bind('<Enter>', self.reveal_toolbar)
+        left, top, _, bottom = self.toolbar_region
+        self.toolbar_eye.geometry(f'36x28+{left}+{top + max(0, (bottom - top - 28) // 2)}')
+        self.toolbar_eye.deiconify()
+
     def show_toolbar(self):
+        if self.toolbar_eye is not None:
+            self.toolbar_eye.withdraw()
         if self.toolbar_hidden:
             self.root.deiconify()
             self.toolbar_hidden = False
@@ -377,12 +407,12 @@ class DesktopBilliardsApp:
             self.show_toolbar()
             messagebox.showinfo('隐藏台面模式',
                                 '按住 Shift：显示球杆和辅助线\n'
-                                '鼠标停在工具条原位置：恢复工具条\n'
+                                '鼠标移到小眼睛上：恢复工具条\n'
                                 'Ctrl+Alt+X：退出游戏',  parent=self.root)
             self.toolbar_leave_since = time.monotonic()
         # Keep dialogs and toolbar button interactions accessible.
         if self.root.grab_current() is not None or any(
-                isinstance(child, tk.Toplevel) and child.winfo_viewable()
+                isinstance(child, tk.Toplevel) and child is not self.toolbar_eye and child.winfo_viewable()
                 for child in self.root.winfo_children()):
             self.show_toolbar()
             return
@@ -415,6 +445,7 @@ class DesktopBilliardsApp:
                     self.remember_position()
                     self.root.withdraw()
                     self.toolbar_hidden = True
+                    self.show_toolbar_eye()
 
     # -- round result ------------------------------------------------------
     def update_result_dialog(self, overlay, table, finished):
