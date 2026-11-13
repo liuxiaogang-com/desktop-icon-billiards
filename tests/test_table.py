@@ -288,6 +288,47 @@ class BilliardsMotionTests(unittest.TestCase):
         game.charge = 1
         self.assertAlmostEqual(game.aim_guide()[1][2][0], left + game.white.radius)
 
+    def test_cut_shot_direction_matches_guide_at_different_frame_rates(self):
+        for fps in (30, 60, 144):
+            for offset in (15, 50, 65, 68):
+                with self.subTest(fps=fps, offset=offset):
+                    game = BilliardsMotion((0, 0, 1600, 1000), [(64, 64)])
+                    target = game.icons[0]
+                    target.x, target.y = game.white.x + 240, game.white.y + offset
+                    game.aim, game.charge = (1., 0.), 1.
+                    line = next(line for line in game.aim_guide() if line[0] == 'target')
+                    expected = math.atan2(line[2][1] - line[1][1], line[2][0] - line[1][0])
+                    game.shoot(1)
+                    for frame in range(fps):
+                        game.step(1 / fps, frame / fps)
+                        if math.hypot(target.vx, target.vy) > 0:
+                            break
+                    self.assertGreater(math.hypot(target.vx, target.vy), 0)
+                    self.assertAlmostEqual(math.atan2(target.vy, target.vx), expected, delta=.005)
+
+    def test_all_corner_mouths_accept_paths_predicted_to_sink_on_small_screens(self):
+        for work in ((0, 0, 1366, 728), (-1024, 0, 0, 728), (0, 0, 1920, 1080)):
+            for corner in (0, 2, 3, 5):
+                for fps in (30, 144):
+                    with self.subTest(work=work, corner=corner, fps=fps):
+                        game = BilliardsMotion(work, [(64, 64)] * 15)
+                        game.sunk = set(range(2, 16))
+                        ball = game.icons[0]
+                        px, py = game.pockets[corner]
+                        dx = 1 if corner in (0, 3) else -1
+                        dy = 1 if corner in (0, 2) else -1
+                        ball.x, ball.y = px + dx * 150, py + dy * 150
+                        velocity = (-dx * 700, -dy * 700)
+                        _, kind, _, _ = game._guide_leg((ball.x, ball.y), velocity, ball.radius, [])
+                        self.assertEqual(kind, 'pocket')
+                        ball.vx, ball.vy = velocity
+                        game.state = 'rolling'
+                        for frame in range(fps):
+                            game.step(1 / fps, frame / fps)
+                            if 1 in game.sunk:
+                                break
+                        self.assertIn(1, game.sunk)
+
     def test_reset_restores_the_original_rack(self):
         game = BilliardsMotion((0, 0, 1600, 1000), [(64, 64), (128, 76), (48, 96)])
         original = [(body.x, body.y) for body in game.bodies]

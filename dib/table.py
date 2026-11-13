@@ -267,24 +267,43 @@ class BilliardsMotion:
         drag = self.height * ROLLING_DRAG
         distance = (speed ** 2 - stop ** 2) / (2 * drag)
         kind, contact = 'stop', None
-        left, top, right, bottom = self.bounds
-        rail_x = ((right - radius if dx > 0 else left + radius) - x) / dx if abs(dx) > 1e-6 else math.inf
-        rail_y = ((bottom - radius if dy > 0 else top + radius) - y) / dy if abs(dy) > 1e-6 else math.inf
-        rail = min(rail_x, rail_y)
-        if rail <= distance:
-            distance = max(0., rail)
-            kind = 'rail'
-            contact = math.isclose(rail_x, rail, abs_tol=1e-6), math.isclose(rail_y, rail, abs_tol=1e-6)
+        boundary, boundary_kind, boundary_contact = self._boundary_event(origin, (dx, dy), radius)
+        if boundary <= distance:
+            distance, kind, contact = boundary, boundary_kind, boundary_contact
         for body in obstacles:
             entry = self._ray_circle(x, y, dx, dy, body.x, body.y, radius + body.radius)
             if entry is not None and entry < distance:
                 distance, kind, contact = entry, 'ball', body
-        for px, py in self.pockets:
-            entry = self._ray_circle(x, y, dx, dy, px, py, self.pocket_radius + radius * .55)
-            if entry is not None and entry <= distance:
-                distance, kind, contact = entry, 'pocket', None
         speed = math.sqrt(max(0., speed ** 2 - 2 * drag * distance))
         return (x + dx * distance, y + dy * distance), kind, contact, (dx * speed, dy * speed)
+
+    def _boundary_event(self, origin, direction, radius):
+        """First rail or pocket contact, shared by the guide and moving balls.
+
+        At corner mouths the rail is open: a path crossing the actual table edge
+        inside the visible hole may continue past the inset ball-centre boundary.
+        """
+        x, y = origin
+        dx, dy = direction
+        left, top, right, bottom = self.bounds
+        rail_x = ((right - radius if dx > 0 else left + radius) - x) / dx if abs(dx) > 1e-6 else math.inf
+        rail_y = ((bottom - radius if dy > 0 else top + radius) - y) / dy if abs(dy) > 1e-6 else math.inf
+        rail = max(0., min(rail_x, rail_y))
+        contact = (rail_x <= rail + 1e-6, rail_y <= rail + 1e-6)
+        distance, kind = rail, 'rail'
+        edge_x = ((right if dx > 0 else left) - x) / dx if abs(dx) > 1e-6 else math.inf
+        edge_y = ((bottom if dy > 0 else top) - y) / dy if abs(dy) > 1e-6 else math.inf
+        edge = min(edge_x, edge_y)
+        for px, py in self.pockets:
+            entry = self._ray_circle(x, y, dx, dy, px, py, self.pocket_radius + radius * .55)
+            if entry is None:
+                continue
+            corner_mouth = (px in (left, right) and math.isfinite(edge) and edge >= 0
+                            and (x + dx * edge - px) ** 2 + (y + dy * edge - py) ** 2
+                            <= self.pocket_radius ** 2)
+            if entry <= distance or (kind == 'rail' and corner_mouth):
+                distance, kind, contact = entry, 'pocket', (px, py)
+        return distance, kind, contact
 
     @staticmethod
     def _ray_circle(x, y, dx, dy, cx, cy, radius):
@@ -328,12 +347,19 @@ class BilliardsMotion:
         steps = max(1, math.ceil(dt * max(180, speed / max(.5, self.white_radius) * 1.7)))
         h = dt / steps
         for _ in range(steps):
+            motion = {}
             for index, body in enumerate(self.bodies):
                 if index in self.sunk:
                     continue
+                speed = math.hypot(body.vx, body.vy)
+                pocket = self._in_pocket(body)
+                if pocket is None and speed:
+                    distance, kind, contact = self._boundary_event(
+                        (body.x, body.y), (body.vx / speed, body.vy / speed), body.radius)
+                    if kind == 'pocket' and distance <= speed * h:
+                        pocket = contact
                 body.x += body.vx * h
                 body.y += body.vy * h
-                pocket = self._in_pocket(body)
                 if pocket is not None:
                     self.sunk.add(index)
                     if index == 0:
@@ -341,9 +367,12 @@ class BilliardsMotion:
                     else:
                         self._start_exit(index, body, pocket)
                 else:
+                    before_wall = body.x, body.y, body.vx, body.vy
                     self._walls(body)
+                    if before_wall == (body.x, body.y, body.vx, body.vy):
+                        motion[id(body)] = before_wall
             active = self.active_bodies()
-            self._collisions(active)
+            self._collisions(active, h, motion)
             for body in active:
                 self._walls(body)
                 speed = math.hypot(body.vx, body.vy)
@@ -427,6 +456,12 @@ class BilliardsMotion:
         return False
 
     def _walls(self, body):
+        speed = math.hypot(body.vx, body.vy)
+        if speed:
+            _, kind, _ = self._boundary_event(
+                (body.x, body.y), (body.vx / speed, body.vy / speed), body.radius)
+            if kind == 'pocket':
+                return
         left, top, right, bottom = self.bounds
         for axis, velocity, low, high in (('x', 'vx', left + body.radius, right - body.radius),
                                           ('y', 'vy', top + body.radius, bottom - body.radius)):
@@ -438,7 +473,7 @@ class BilliardsMotion:
                     setattr(body, velocity, -speed * RAIL_REBOUND)
                     body.impact = max(body.impact, min(.23, abs(speed) / self.height * .25))
 
-    def _collisions(self, bodies):
+    def _collisions(self, bodies, dt=0., motion=None):
         # Nearby buckets keep the number of tested pairs low on crowded desktops.
         cell = max(1, self.radius * 2)
         buckets = defaultdict(list)
@@ -448,22 +483,43 @@ class BilliardsMotion:
             for y in range(gy - 1, gy + 2):
                 for x in range(gx - 1, gx + 2):
                     for other in buckets.get((x, y), ()):
-                        self._collide(other, body)
+                        # Rewind only an uninterrupted straight leg. A wall or a previous
+                        # collision in this substep invalidates that trajectory.
+                        straight = motion is not None and all(
+                            motion.get(id(ball)) == (ball.x, ball.y, ball.vx, ball.vy)
+                            for ball in (other, body))
+                        self._collide(other, body, dt if straight else 0.)
             buckets[gx, gy].append(body)
 
-    def _collide(self, a, b):
+    def _collide(self, a, b, dt=0.):
         dx = b.x - a.x
         dy = b.y - a.y
         limit = a.radius + b.radius
-        if dx * dx + dy * dy >= limit * limit:
+        # Resolve at first contact, not at the overlapping frame endpoint. The latter
+        # rotates the normal on thin cuts and disagrees with the aim guide.
+        contact_normal = None
+        rvx, rvy = b.vx - a.vx, b.vy - a.vy
+        speed = math.hypot(rvx, rvy)
+        if dt > 0 and speed > 1e-6:
+            sx, sy = dx - rvx * dt, dy - rvy * dt
+            if sx * sx + sy * sy >= limit * limit:
+                entry = self._ray_circle(0., 0., -rvx / speed, -rvy / speed, sx, sy, limit)
+                if entry is not None and entry <= speed * dt:
+                    hit_time = entry / speed
+                    contact_normal = ((sx + rvx * hit_time) / limit, (sy + rvy * hit_time) / limit)
+        if contact_normal is None and dx * dx + dy * dy >= limit * limit:
             return
         distance = math.hypot(dx, dy)
         nx, ny = (dx / distance, dy / distance) if distance > 1e-6 else (1., 0.)
-        correction = (limit - distance) * .5
+        # Keep overlap correction at the current positions so a chain collision does
+        # not rewind a ball through another contact already resolved this substep.
+        correction = max(0., limit - distance) * .5
         a.x -= nx * correction
         a.y -= ny * correction
         b.x += nx * correction
         b.y += ny * correction
+        if contact_normal is not None:
+            nx, ny = contact_normal
         closing = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny
         if closing >= 0:
             return
