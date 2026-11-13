@@ -106,6 +106,7 @@ class DesktopBilliardsApp:
         publish_version(root, config.VERSION)
         self.time_title, self.time_value = panel.time_title, panel.time_value
         self.count_title, self.count_value = panel.count_title, panel.count_value
+        self.remaining_title = panel.remaining_title
         self.remaining_value = panel.remaining_value
         self.refresh_buttons()
         root.protocol('WM_DELETE_WINDOW', self.close)

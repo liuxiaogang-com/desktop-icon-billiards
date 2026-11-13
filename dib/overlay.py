@@ -602,7 +602,10 @@ class BilliardsOverlay:
             return
         if self.hidden or not self.windows:
             raise RuntimeError('请等桌面图标摆好后再联机')
-        table = BilliardsMotion(LOGICAL_BOUNDS, [source.size for source in self.sources],
+        # Pillow sizes the table artwork from ``work_area``, which must be whole pixels, so
+        # the logical rectangle is quantised here rather than deep inside the drawing code.
+        bounds = tuple(int(round(value)) for value in LOGICAL_BOUNDS)
+        table = BilliardsMotion(bounds, [source.size for source in self.sources],
                                 count=VERSUS_BALLS)
         table.authoritative = role == 'host'
         table.local_side = 0 if role == 'host' else 1
@@ -610,7 +613,7 @@ class BilliardsOverlay:
         self.versus_session = session
         self.versus_role = role
         self.versus_names = tuple(names)
-        self.view = Viewport.fit(LOGICAL_BOUNDS, self.primary_bounds)
+        self.view = Viewport.fit(bounds, self.primary_bounds)
         self.versus_status = ''
         self.disconnect_reason = ''
         self.nack_note = ''
@@ -645,7 +648,10 @@ class BilliardsOverlay:
         self.guide_drawn = 0.0
         self.white_position = None
         self.transition = None
-        self.poses = []
+        # ``draw_balls`` writes poses by index, so the list must already be as long as the
+        # window set even before the first frame of the new table (a swap to the 15 ball
+        # versus rack would otherwise index past the end of an empty list).
+        self.poses = [None] * max(len(self.items), len(table.icons))
         self.frame_cache = OrderedDict()
         self.frame_cache_bytes = 0
         self.ball_canvas = self.canvas_for(table)
