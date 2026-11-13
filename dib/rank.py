@@ -343,7 +343,7 @@ class RankController:
                 return {
                     'phase': 'ok',
                     'rank': int(this['rank']),
-                    'percentile': int(this['percentile']),
+                    'percentile': float(this['percentile']),
                     'best_rank': int(best['rank']),
                     'rank_text': f'第 {this["rank"]:,} 名',
                     'percentile_text': f'超过 {this["percentile"]}% 的玩家',

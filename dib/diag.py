@@ -34,13 +34,15 @@ def start_session(version, lines=()):
 
 
 def log(*lines):
-    """Append lines, stopping quietly once the file reaches its size cap."""
+    """Append bounded records, retaining only one previous log when full."""
     try:
         with _lock:
             path = _path()
-            if path.exists() and path.stat().st_size > MAX_BYTES:
-                return
-            with path.open('a', encoding='utf-8') as handle:
-                handle.write('\n'.join(str(line) for line in lines) + '\n')
+            data = ('\n'.join(str(line) for line in lines)).encode('utf-8')
+            data = data[:MAX_BYTES - 1].decode('utf-8', errors='ignore').encode('utf-8') + b'\n'
+            if path.exists() and path.stat().st_size + len(data) > MAX_BYTES:
+                path.replace(path.with_name('diag.old.log'))
+            with path.open('ab') as handle:
+                handle.write(data)
     except Exception:
         pass

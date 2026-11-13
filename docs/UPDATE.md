@@ -15,6 +15,7 @@ HTTPS JSON 文件，客户端读取后只做提示：点击「去更新」会用
 ## 更新源地址
 
 - 客户端默认请求 `https://go.liuxiaogang.com/desktop-icon-billiards-update`。
+- 请求查询参数包含 `app=DesktopIconBilliards`、`version=<当前安装版本>` 和 `source`。启动自动检查用 `source=startup`，手动点击检查更新用 `source=manual`；可在短链入口统计请求来源。客户端保留地址已有的其他查询参数。
 - 短链用 HTTP 302 指向 [CNB 主分支的 update.json](https://cnb.cool/liuxiaogang/desktop-icon-billiards/-/git/raw/main/update.json)，由该文件返回 UTF-8 JSON。每次发版更新 CNB 上的文件即可。
 - 预发布/联调可临时覆盖：设置环境变量 `DIB_UPDATE_URL`，进程启动时读取，exe 无需重新打包。
 

@@ -114,7 +114,7 @@ class LeaderboardDialog:
                                font=('Segoe UI', 16, 'bold'), fill=colour)
             if mine:
                 canvas.create_text(112, cy, text='我', anchor='w', font=(FONT, 9), fill=ACCENT)
-            canvas.create_text(width - 64, cy, text=f'{entry["avg_ms"] / 1000:.2f}', anchor='e',
+            canvas.create_text(width - 64, cy, text=f'{entry["avg_ms"] / 1000:.3f}', anchor='e',
                                font=('Segoe UI', 16, 'bold'), fill=ACCENT if mine else TEXT)
             canvas.create_text(width - 10, cy + 2, text='秒/颗', anchor='e', font=(FONT, 8), fill=MUTED)
         canvas.configure(scrollregion=(0, 0, width, max(1, len(self.entries) * h)))
@@ -169,7 +169,7 @@ class LeaderboardDialog:
                 self.canvas.yview_moveto(0)
                 me = data['me']
                 self.personal.set(f'第 {me["rank"]:,} 名' if me else '暂无上榜成绩')
-                self.personal_score.set(f'{me["avg_ms"] / 1000:.2f} 秒/颗' if me else '')
+                self.personal_score.set(f'{me["avg_ms"] / 1000:.3f} 秒/颗' if me else '')
                 stamp = datetime.fromisoformat(data['generated_at'].replace('Z', '+00:00')).astimezone()
                 self.status.set(('榜单暂无成绩 · ' if not data['entries'] else '') + f'更新于 {stamp:%m-%d %H:%M:%S}')
             else:

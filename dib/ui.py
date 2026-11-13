@@ -42,9 +42,18 @@ RANK_CONSENT = (
 RANK_INTRO = '现在可以和全球玩家比谁清台更快了。\n\n' + RANK_CONSENT
 
 
+_last_log = {}
+
+
 def _write_log(name, text):
+    text = text.encode('utf-8')[:diag.MAX_BYTES].decode('utf-8', errors='ignore')
+    now = time.monotonic()
+    previous = _last_log.get(name)
+    if previous is not None and previous[0] == text and now - previous[1] < 60:
+        return
     try:
         (runtime_directory() / name).write_text(text, encoding='utf-8')
+        _last_log[name] = (text, now)
     except OSError:
         pass
 
@@ -89,6 +98,7 @@ class DesktopBilliardsApp:
         self.leaderboard_dialog = None
         self.result_dialog = None
         self.result_serial = None
+        self.result_observation = None
         self.update_results = queue.SimpleQueue()
         self.settings = self.make_settings()
         self.felt_enabled = bool(self.settings.get('felt', True))
@@ -102,8 +112,9 @@ class DesktopBilliardsApp:
             'restart': self.restart, 'toggle_guide': self.toggle_guide, 'toggle_rank': self.toggle_rank,
             'check_updates': lambda: self.check_updates(manual=True), 'donate': self.show_donation,
             'quit': self.close, 'toggle_felt': self.toggle_felt,
-            'open_credit': self.open_credit,
-        }, config.CREDIT)
+            'leaderboard': self.show_leaderboard,
+            'open_credit': lambda: webbrowser.open(config.DOUYIN_URL),
+        }, config.DOUYIN_CREDIT)
         publish_version(root, config.VERSION)
         self.time_title, self.time_value = panel.time_title, panel.time_value
         self.count_title, self.count_value = panel.count_title, panel.count_value
@@ -221,7 +232,7 @@ class DesktopBilliardsApp:
 
         def fetch():
             try:
-                info = fetch_update(config.UPDATE_URL, config.VERSION)
+                info = fetch_update(config.UPDATE_URL, config.VERSION, source='manual' if manual else 'startup')
             except Exception:
                 _write_log('update.log', traceback.format_exc())
                 self.update_results.put((False, None))
@@ -268,8 +279,7 @@ class DesktopBilliardsApp:
             self.session = LayoutSession(desktop, self.journal)
             items = self.session.begin(overlay_only=True)
             for item in items:
-                item['name'] = desktop.folder.GetDisplayNameOf(
-                    [desktop.cache[item['id']]], desktop.shellcon.SHGDN_NORMAL)
+                item['name'] = desktop.display_name(item['id'])
             with dpi_context(-4):
                 overlay = BilliardsOverlay(desktop, items)
                 overlay.guide_enabled = self.guide_enabled
@@ -324,6 +334,14 @@ class DesktopBilliardsApp:
                     self.root.after(800, self.offer_rank)
                 self.update_toolbar()
                 overlay = self.runner.overlay
+                try:
+                    while True:
+                        url = overlay.link_requests.get_nowait()
+                        webbrowser.open(url)
+                except queue.Empty:
+                    pass
+                except Exception:
+                    _write_log('links.log', traceback.format_exc())
                 table = overlay.table
                 state = table.state
                 minutes, seconds = divmod(table.round_seconds, 60)
@@ -331,6 +349,11 @@ class DesktopBilliardsApp:
                 total = len(table.icons)
                 pocketed = table.pocketed_icons
                 finished = state == 'finished'
+                observation = (table.round_serial, finished)
+                if observation != self.result_observation:
+                    self.result_observation = observation
+                    diag.log(f'round observed: serial={table.round_serial} finished={finished} '
+                             f'pocketed={pocketed}/{total} toolbar_hidden={self.toolbar_hidden}')
                 self.time_title.set('总用时' if finished else '本局用时')
                 self.count_title.set('图标总数' if finished else '图标入袋')
                 self.count_value.set(str(total) if finished else f'{pocketed}/{total}')
@@ -451,18 +474,22 @@ class DesktopBilliardsApp:
     def update_result_dialog(self, overlay, table, finished):
         """Open the result window once per cleared round and keep its numbers current."""
         if finished and self.result_serial != table.round_serial:
+            diag.log(f'result opening: serial={table.round_serial} root_state={self.root.state()}')
             self.result_serial = table.round_serial
             self.result_dialog = ResultDialog(self.root, {'again': self.play_again,
                                                           'enable_rank': self.enable_rank_from_dialog,
                                                           'leaderboard': self.show_leaderboard,
                                                           'open_credit': self.open_credit},
                                              config.CREDIT, config.SITE_TEXT)
+            diag.log(f'result created: serial={table.round_serial}')
         dialog = self.result_dialog
         if dialog is None:
             return
         if not dialog.alive():
             self.result_dialog = None
         elif not finished or table.round_serial != self.result_serial:
+            diag.log(f'result closing for round change: finished={finished} '
+                     f'serial={table.round_serial} result_serial={self.result_serial}')
             dialog.close()  # a new round has begun
             self.result_dialog = None
         else:
@@ -550,6 +577,11 @@ def main():
             root.destroy()
             return
         root = tk.Tk()
+        def callback_error(kind, error, trace):
+            text = ''.join(traceback.format_exception(kind, error, trace))
+            _write_log('callback.log', text)
+            diag.log('Tk callback failed:', text)
+        root.report_callback_exception = callback_error
         app = DesktopBilliardsApp(root, handle)
         root.mainloop()
     except SystemExit:

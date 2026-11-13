@@ -11,6 +11,8 @@ import re
 import urllib.parse
 import urllib.request
 
+from .config import INTERNAL_NAME
+
 MAX_FEED_BYTES = 64 * 1024
 MAX_NOTES = 4000
 VERSION_PATTERN = re.compile(r'\d{1,6}\.\d{1,6}\.\d{1,6}')
@@ -83,11 +85,18 @@ def download(url, limit, version):
     return data
 
 
-def fetch_update(url, current, *, allow_insecure=False):
+def fetch_update(url, current, *, source='startup', allow_insecure=False):
     """Fetch and validate the feed. HTTP is accepted only for local tests."""
     if not url:
         return None
-    scheme = urllib.parse.urlsplit(url).scheme
+    parsed = urllib.parse.urlsplit(url)
+    scheme = parsed.scheme
     if scheme != 'https' and not (allow_insecure and scheme == 'http'):
         raise ValueError('Update URL must use HTTPS')
+    if source not in ('startup', 'manual'):
+        raise ValueError('Update source must be startup or manual')
+    query = [(key, value) for key, value in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+             if key not in ('app', 'version', 'source')]
+    query.extend((('app', INTERNAL_NAME), ('version', current), ('source', source)))
+    url = urllib.parse.urlunsplit(parsed._replace(query=urllib.parse.urlencode(query)))
     return parse_update(download(url, MAX_FEED_BYTES, current), current)

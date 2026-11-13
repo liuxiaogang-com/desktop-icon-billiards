@@ -276,6 +276,23 @@ class ShellDesktop:
         self.cache = cache
         return items
 
+    def display_name(self, identity):
+        """A missing display label must not prevent an otherwise valid desktop from starting."""
+        import pywintypes
+        from . import diag
+
+        try:
+            name = self.folder.GetDisplayNameOf([self.cache[identity]], self.shellcon.SHGDN_NORMAL)
+        except pywintypes.com_error as error:
+            # Record the failed operation, not the user's private file path or name.
+            diag.log(f'GetDisplayNameOf(SHGDN_NORMAL) failed: HRESULT={error.hresult & 0xffffffff:08X}; '
+                     'omitting label')
+        else:
+            if isinstance(name, str) and name.strip():
+                return name
+            diag.log('GetDisplayNameOf(SHGDN_NORMAL) returned an empty label; omitting label')
+        return ''
+
     def move(self, positions):
         """Move all requested identities in one documented SelectAndPositionItems call."""
         if not positions:

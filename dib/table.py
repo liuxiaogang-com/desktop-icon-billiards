@@ -12,7 +12,7 @@ from .body import Body
 
 # How long a sinking icon keeps its exit animation.
 EXIT_SECONDS = .62
-MIN_SHOT_CHARGE = .18
+MIN_SHOT_CHARGE = 0.
 RAIL_REBOUND = .88
 BALL_IMPULSE = .96
 ROLLING_DRAG = .45
@@ -188,7 +188,7 @@ class BilliardsMotion:
         return True
 
     def _shot_speed(self, power):
-        return self.height * (.62 + 2.55 * max(0, min(1, power))) * 1.58
+        return self.height * (.12 + 3.05 * max(0, min(1, power))) * 1.58
 
     def cue(self):
         if self.state not in ('ready', 'stroke'):

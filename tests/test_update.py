@@ -2,6 +2,7 @@ import json
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlsplit
 
 from dib.update import (MAX_FEED_BYTES, fetch_update, parse_update, release_entries, version_tuple)
 
@@ -103,6 +104,7 @@ class _FeedHandler(BaseHTTPRequestHandler):
     payload = b'{}'
 
     def do_GET(self):  # noqa: N802 - http.server API
+        self.server.request_path = self.path
         self.send_response(200)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Content-Length', str(len(self.payload)))
@@ -134,6 +136,22 @@ class FetchUpdateTests(unittest.TestCase):
         _FeedHandler.payload = encoded(feed())
         with self.assertRaises(ValueError):
             fetch_update(self.url, '0.1.0')
+
+    def test_startup_request_includes_app_and_installed_version(self):
+        _FeedHandler.payload = encoded(feed())
+        fetch_update(self.url, '0.1.0', allow_insecure=True)
+        self.assertEqual(parse_qs(urlsplit(self.server.request_path).query), {
+            'app': ['DesktopIconBilliards'], 'version': ['0.1.0'], 'source': ['startup'],
+        })
+
+    def test_manual_request_preserves_other_parameters_and_replaces_tracking(self):
+        _FeedHandler.payload = encoded(feed())
+        url = self.url + '?channel=preview&empty=&source=startup&version=old&app=old'
+        fetch_update(url, '0.1.5', source='manual', allow_insecure=True)
+        self.assertEqual(parse_qs(urlsplit(self.server.request_path).query, keep_blank_values=True), {
+            'channel': ['preview'], 'empty': [''], 'app': ['DesktopIconBilliards'],
+            'version': ['0.1.5'], 'source': ['manual'],
+        })
 
     def test_rejects_oversized_response(self):
         _FeedHandler.payload = b'x' * (MAX_FEED_BYTES + 1)

@@ -84,6 +84,46 @@ class BilliardsMotionTests(unittest.TestCase):
         self.assertAlmostEqual(game.white.vx, expected, delta=expected * .01)
         self.assertEqual(game.white.vy, 0)
 
+    def test_zero_charge_is_a_small_nudge_and_full_power_is_unchanged(self):
+        from dib.overlay import TablePointer
+        game = BilliardsMotion((0, 0, 1600, 1000), [(64, 64)] * 2)
+        pointer = TablePointer()
+        start_x = game.white.x
+        pointer.update(game, 9., start_x + 200, game.white.y, False, True)
+        pointer.update(game, 10., start_x + 200, game.white.y, True, True)
+        pointer.update(game, 10., start_x + 200, game.white.y, False, True)
+        self.assertLess(game.power, game.height * .2)
+        for frame in range(180):
+            game.step(1 / 60, 10 + (frame + 1) / 60)
+        self.assertEqual(game.state, 'ready')
+        self.assertGreater(game.white.x - start_x, 0)
+        self.assertLess(game.white.x - start_x, game.height * .06)
+        self.assertAlmostEqual(game._shot_speed(1), game.height * (.62 + 2.55) * 1.58)
+        speeds = [game._shot_speed(value / 100) for value in range(101)]
+        self.assertTrue(all(a < b for a, b in zip(speeds, speeds[1:])))
+
+    def test_half_charge_uses_half_of_the_speed_range(self):
+        game = BilliardsMotion((0, 0, 1600, 1000), [(64, 64)] * 2)
+        minimum, maximum = game._shot_speed(0), game._shot_speed(1)
+        game.shoot(.5)
+        self.assertAlmostEqual(game.power, minimum + (maximum - minimum) * .5)
+        self.assertEqual(game._shot_speed(-1), minimum)
+        self.assertEqual(game._shot_speed(2), maximum)
+
+    def test_pointer_charges_linearly_in_one_and_a_half_seconds(self):
+        from dib.overlay import TablePointer
+        game = BilliardsMotion((0, 0, 1600, 1000), [(64, 64)] * 2)
+        pointer = TablePointer()
+        x, y = game.white.x + 200, game.white.y
+        pointer.update(game, 9., x, y, False, True)
+        pointer.update(game, 10., x, y, True, True)
+        for now, expected in ((10.75, .5), (11.5, 1.), (12., 1.)):
+            pointer.update(game, now, x, y, True, True)
+            self.assertAlmostEqual(game.charge, expected)
+        pointer.update(game, 12., x, y, False, True)
+        self.assertEqual(game.state, 'stroke')
+        self.assertAlmostEqual(game.power, game._shot_speed(1))
+
     def test_manual_shoot_collision_chain_rebounds_and_rearms(self):
         game = BilliardsMotion((0, 0, 1600, 1000), [(64, 64)] * 2)
         # Put two balls in the same line so the first must pass its impulse on.
@@ -262,6 +302,7 @@ class BilliardsMotionTests(unittest.TestCase):
         blocker.x = target.x + 220 * direction[0]
         blocker.y = target.y + 220 * direction[1]
         game.aim_at(target.x, game.white.y)
+        game.charge = .35  # Enough travel to reach both balls; zero charge is a short nudge.
         incoming, white, outgoing = game.aim_guide()
         self.assertEqual([segment[0] for segment in (incoming, white, outgoing)], ['incoming', 'white', 'target'])
         self.assertAlmostEqual(incoming[2][0], target.x - forward)
@@ -278,6 +319,7 @@ class BilliardsMotionTests(unittest.TestCase):
         game.white.x = right - 180
         game.icons[0].y = game.white.y - 150
         game.aim_at(right, game.white.y)
+        game.charge = .35  # Reach the rail before stopping.
         incoming, rebound = game.aim_guide()
         self.assertAlmostEqual(incoming[2][0], right - game.white.radius)
         self.assertEqual(rebound[0], 'white')

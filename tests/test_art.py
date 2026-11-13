@@ -211,6 +211,7 @@ class AimPreviewTests(unittest.TestCase):
         target.x, target.y = game.white.x + 240, game.white.y
         game.icons[1].y = game.white.y - 300
         game.aim_at(target.x, game.white.y)
+        game.charge = .35  # Reach the target; zero charge is a short nudge.
         lines, circles = game.aim_preview()
         self.assertEqual(game.aim_guide(), lines)
         roles = {role: (centre, radius) for role, centre, radius in circles}
@@ -225,6 +226,7 @@ class AimPreviewTests(unittest.TestCase):
         game.white.x = game.bounds[2] - 180
         game.icons[0].y = game.white.y - 150
         game.aim_at(game.bounds[2], game.white.y)
+        game.charge = .35  # Reach the rail before stopping.
         _, circles = game.aim_preview()
         self.assertEqual([role for role, _, _ in circles], ['ghost'])
 

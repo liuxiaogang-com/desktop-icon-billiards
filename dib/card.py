@@ -166,13 +166,24 @@ def render_card(view, *, when=None, credit='', site=''):
         draw.text((centre, 309 * s), tier, font=badge_font, fill=tier_colour, anchor='mm')
         draw.text((centre, 408 * s), '本局全球排名', font=cjk(30 * s), fill=MUTED, anchor='mm')
         _hero_rank(draw, width, 420 * s, rank['rank'], s, tier_colour)
-        parts = (('超过  ', cjk(32 * s)), (f'{rank["percentile"]}%', numerals(110 * s)),
+        percentage = f'{rank["percentile"]:.2f}'.rstrip('0').rstrip('.')
+        parts = (('超过  ', cjk(32 * s)), (f'{percentage}%', numerals(110 * s)),
                  ('  的全球玩家', cjk(32 * s)))
         lengths = [_text_width(draw, text, font) for text, font in parts]
         x = (width - sum(lengths)) / 2
         for (text, font), length in zip(parts, lengths):
             draw.text((x, 828 * s), text, font=font, fill=ACCENT_LIGHT if '%' in text else TEXT, anchor='ls')
             x += length
+        bar_left, bar_right = 190 * s, width - 190 * s
+        bar_top, bar_bottom = 868 * s, 882 * s
+        track = Image.new('RGBA', canvas.size)
+        _rounded(ImageDraw.Draw(track), (bar_left, bar_top, bar_right, bar_bottom), 7 * s,
+                 fill=ACCENT_LIGHT + (70,), outline=ACCENT_LIGHT + (105,), width=s)
+        canvas.alpha_composite(track)
+        filled = (bar_right - bar_left) * max(0, min(100, rank['percentile'])) / 100
+        if filled > 0:
+            _rounded(draw, (bar_left, bar_top, bar_left + filled, bar_bottom),
+                     min(7 * s, filled / 2), fill=ACCENT_LIGHT)
     else:
         draw.text((centre, 300 * s), '平均每颗用时', font=cjk(34 * s), fill=MUTED, anchor='mm')
         value = view['average']
@@ -227,7 +238,7 @@ def render_card(view, *, when=None, credit='', site=''):
     if credit:
         draw.text((margin, 1296 * s), credit, font=numerals(28 * s), fill=ACCENT, anchor='lm')
     if site:
-        draw.text((width - margin, 1296 * s), site, font=numerals(24 * s), fill=MUTED, anchor='rm')
+        draw.text((width - margin, 1296 * s), site, font=cjk(24 * s), fill=MUTED, anchor='rm')
 
     return canvas.convert('RGB').resize((WIDTH, HEIGHT), Image.Resampling.LANCZOS)
 

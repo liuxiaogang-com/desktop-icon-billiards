@@ -10,6 +10,7 @@ import ctypes
 import math
 import os
 import platform
+import queue
 import struct
 import threading
 import time
@@ -24,8 +25,8 @@ import win32process
 from PIL import Image, ImageDraw, ImageFont
 
 from . import diag
-from .config import CREDIT
-from .art import charge_art, cue_art, guide_art, pocket_art, pocket_particles, table_art, white_art
+from .config import CREDIT, REPOSITORY_URL
+from .art import credit_layout, charge_art, cue_art, guide_art, pocket_art, pocket_particles, table_art, white_art
 from .balls import MAX_BALLS, ball_summary, fill_sources, priority_order
 from .display import dpi_context, monitors
 from .shell import ShellDesktop
@@ -303,7 +304,7 @@ class TablePointer:
                 self.held_since = now
                 self.charge_origin = (x, y)
         if self.held_since is not None:
-            power = min(1, (now - self.held_since) / 0.9)
+            power = min(1, (now - self.held_since) / 1.5)
             game.charge = power
             if not down:
                 self.held_since = None
@@ -330,6 +331,10 @@ class BilliardsOverlay:
         self.ball_info = ''
         self.blocked_by = None
         self.last_blocked = None
+        self.credit_links = []
+        self.credit_pressed = None
+        self.credit_was_down = True
+        self.link_requests = queue.SimpleQueue()
         self.luma_map = None
         # Set from the UI thread, applied by the animation thread inside draw().
         self.want_hidden = False
@@ -385,17 +390,6 @@ class BilliardsOverlay:
             info = win32api.GetMonitorInfo(monitor)
             dpi = next(m[3] for m in self.monitor_state if m[0] == info['Device'])
             self.fonts.append(_load_font(max(9, round(12 * dpi / 96))))
-        # Sparse desktops are padded to the minimum ball count by cloning icons; the clones
-        # are overlay-only and start their intro flight from the icon they copy.
-        real = list(self.items)
-        extra = fill_sources(len(real))
-        for source in extra:
-            self.items.append(dict(real[source]))
-            self.rects.append(self.rects[source])
-            self.fonts.append(self.fonts[source])
-        self.padded = len(extra)
-        self.ball_info = ball_summary(self.desktop_total, self.real_count, self.padded)
-        diag.log(f'balls: {self.ball_info}', f'primary work area (parent coords): {self.primary_bounds}')
         self.was_visible = win32gui.IsWindowVisible(self.listview)
         if not self.was_visible:
             raise RuntimeError('桌面图标当前已隐藏，请先在桌面菜单中显示图标。')
@@ -412,14 +406,14 @@ class BilliardsOverlay:
                 raise
 
     def choose_icons(self, items):
-        """Pick up to MAX_BALLS desktop icons by priority; skip ones the list view cannot report.
+        """Find desktop icons with readable positions; artwork is checked before choosing balls.
 
         Returns ``[(shell_index, (icon_rect, label_rect)), ...]`` in desktop order.
         """
         order = priority_order(items)
         chosen, skipped, position = [], [], 0
-        while len(chosen) < MAX_BALLS and position < len(order):
-            batch = order[position:position + MAX_BALLS - len(chosen)]
+        while position < len(order):
+            batch = order[position:position + MAX_BALLS]
             position += len(batch)
             for index, pair in zip(batch, item_rects(self.listview, batch)):
                 if pair is None:
@@ -430,7 +424,7 @@ class BilliardsOverlay:
         diag.log(f'icons: shell={len(items)} listview={listview_count(self.listview)} '
                  f'chosen={len(chosen)} unreadable={skipped[:20]}')
         if not chosen:
-            raise RuntimeError('无法读取桌面图标的位置。请确认桌面图标已显示，并且没有被桌面整理软件接管。')
+            raise RuntimeError('没有获取到图标。请确认桌面上有可用图标，且桌面图标已显示。')
         chosen.sort(key=lambda row: row[0])
         return chosen
 
@@ -465,15 +459,7 @@ class BilliardsOverlay:
         # Run in a worker: thumbnail extraction can access disk / Shell extensions.
         comtypes.CoInitialize()
         try:
-            extracted = {}
-            for item, (icon, label) in zip(self.items, self.rects):
-                size = min(icon[2] - icon[0], icon[3] - icon[1])
-                key = (item['id'], size)
-                if key not in extracted:  # padding balls reuse the artwork of the icon they copy
-                    source = artwork(item['id'], size)
-                    source.thumbnail((size, size), Image.Resampling.LANCZOS)
-                    extracted[key] = source
-                self.sources.append(extracted[key].copy())
+            self.load_icon_sources()
             self.build_templates()
             screens = [monitor[1] for monitor in self.monitor_state]
             desktop_bounds = (min(rect[0] for rect in screens), min(rect[1] for rect in screens),
@@ -485,7 +471,10 @@ class BilliardsOverlay:
                 self.luma_map = wallpaper.convert('L').resize(
                     (max(1, wallpaper.width // LUMA_CELL), max(1, wallpaper.height // LUMA_CELL)),
                     Image.Resampling.BOX)
-            self.rail_frame = table_art(self.table, wallpaper, CREDIT)
+            credit = CREDIT
+            self.rail_frame = table_art(self.table, wallpaper, credit)
+            _, rows = credit_layout(self.table, credit)
+            self.credit_links = [(row[3], REPOSITORY_URL) for row in rows]
             icon_sizes = sorted(min(icon[2] - icon[0], icon[3] - icon[1]) for icon, _ in self.rects)
             icon_size = icon_sizes[len(icon_sizes) // 2]
             recycle_bin = artwork('::{645FF040-5081-101B-9F08-00AA002F954E}', icon_size)
@@ -494,11 +483,60 @@ class BilliardsOverlay:
         finally:
             comtypes.CoUninitialize()
 
+    def load_icon_sources(self):
+        """Skip unreadable artwork, then clone only usable icons to the minimum count."""
+        import pywintypes
+
+        loaded = []
+        for index in priority_order(self.items):
+            item = self.items[index]
+            icon, _ = self.rects[index]
+            size = min(icon[2] - icon[0], icon[3] - icon[1])
+            source = None
+            for requested in dict.fromkeys((max(128, size), size)):
+                try:
+                    candidate = artwork(item['id'], requested)
+                    candidate.thumbnail((requested, requested), Image.Resampling.LANCZOS)
+                    if not candidate.getchannel('A').getbbox():
+                        raise ValueError('empty icon artwork')
+                    source = candidate
+                    break
+                except (OSError, ValueError, pywintypes.com_error, comtypes.COMError) as error:
+                    diag.log(f'icon artwork attempt failed: index={index} size={requested} '
+                             f'error={type(error).__name__} '
+                             f'code={getattr(error, "hresult", getattr(error, "winerror", None))}')
+            if source is None:
+                self.skipped += 1
+                continue
+            loaded.append((index, source))
+            if len(loaded) == MAX_BALLS:
+                break
+        if not loaded:
+            raise RuntimeError('没有获取到图标。请确认桌面上有可用图标，且桌面图标已显示。')
+        loaded.sort(key=lambda row: row[0])
+        self.items = [self.items[index] for index, _ in loaded]
+        self.rects = [self.rects[index] for index, _ in loaded]
+        self.fonts = [self.fonts[index] for index, _ in loaded]
+        self.sources = [source for _, source in loaded]
+        self.real_count = len(loaded)
+        extra = fill_sources(self.real_count)
+        for index in extra:
+            self.items.append(dict(self.items[index]))
+            self.rects.append(self.rects[index])
+            self.fonts.append(self.fonts[index])
+            self.sources.append(self.sources[index].copy())
+        self.padded = len(extra)
+        self.ball_info = ball_summary(self.desktop_total, self.real_count, self.padded)
+        diag.log(f'balls: {self.ball_info}; unreadable={self.skipped}')
+
     def build_templates(self):
         """Build label canvases and the resting pose each icon starts from."""
         self.frame_cache = OrderedDict()
         self.frame_cache_bytes = 0
+        desktop_sizes = []
         for index, (source, (icon, label)) in enumerate(zip(self.sources, self.rects)):
+            desktop_source = source.copy()
+            desktop_source.thumbnail((icon[2] - icon[0], icon[3] - icon[1]), Image.Resampling.LANCZOS)
             left = min(icon[0], label[0]) - 40
             top = icon[1] - 48
             frame = Image.new('RGBA', (max(icon[2], label[2]) - left + 40, max(icon[3], label[3]) - top + 12))
@@ -528,18 +566,29 @@ class BilliardsOverlay:
             bounds = source.getchannel('A').getbbox()
             if not bounds:
                 raise RuntimeError('系统返回了空图标')
-            center = (icon[0] + icon[2]) / 2 - left - source.width / 2 + (bounds[0] + bounds[2]) / 2
-            bottom = icon[3] - top - source.height + bounds[3]
+            desktop_bounds = desktop_source.getchannel('A').getbbox()
+            if not desktop_bounds:
+                raise RuntimeError('系统返回了空图标')
+            center = ((icon[0] + icon[2]) / 2 - left - desktop_source.width / 2
+                      + (desktop_bounds[0] + desktop_bounds[2]) / 2)
+            bottom = icon[3] - top - desktop_source.height + desktop_bounds[3]
+            desktop_sizes.append((desktop_bounds[2] - desktop_bounds[0], desktop_bounds[3] - desktop_bounds[1]))
             self.sources[index] = source.crop(bounds)
             self.templates.append(frame)
             self.anchors.append((left, top, center, bottom))
             self.drawn.append(None)
         self.poses = []
-        for source, (left, top, center, bottom) in zip(self.sources, self.anchors):
+        for (width, height), (left, top, center, bottom) in zip(desktop_sizes, self.anchors):
             # Resting pose at the real desktop position, before the rack is built.
-            self.poses.append((left + center, top + bottom - source.height / 2,
-                               source.width, source.height, 0, 0, 1.0))
+            self.poses.append((left + center, top + bottom - height / 2,
+                               width, height, 0, 0, 1.0))
         self.table = BilliardsMotion(self.primary_bounds, [source.size for source in self.sources])
+        self.intro_sources = self.sources
+        self.sources = []
+        for source in self.intro_sources:
+            ratio = self.table.tile / max(source.size)
+            size = (max(1, round(source.width * ratio)), max(1, round(source.height * ratio)))
+            self.sources.append(source.resize(size, Image.Resampling.LANCZOS))
         # All icons share the collision radius. Prepare the six immutable layers
         # once so simultaneous impacts never resize the same artwork per ball.
         self.ring_frames = {level: self.ring_layer(level) for level in range(1, RING_LEVELS + 1)}
@@ -668,7 +717,27 @@ class BilliardsOverlay:
         # primary (logical left) button is the physical right one.
         button = win32con.VK_RBUTTON if win32api.GetSystemMetrics(SM_SWAPBUTTON) else win32con.VK_LBUTTON
         down = bool(win32api.GetAsyncKeyState(button) & 0x8000)
+        if any(l <= x < r and t <= y < b for (l, t, r, b), _ in self.credit_links):
+            hwnd = win32gui.WindowFromPoint(screen)
+            root = win32gui.GetAncestor(hwnd, win32con.GA_ROOT) if hwnd else 0
+            over_credit = bool(root and win32gui.GetClassName(root) in ('Progman', 'WorkerW'))
+        else:
+            over_credit = False
+        self.update_credit_pointer(x, y, down, over_credit)
         self.pointer.update(self.table, now, x, y, down, on_desktop)
+
+    def update_credit_pointer(self, x, y, down, on_desktop):
+        target = next((url for (l, t, r, b), url in self.credit_links
+                       if l <= x < r and t <= y < b), None) if self.felt_visible and on_desktop else None
+        if down and not self.credit_was_down:
+            self.credit_pressed = target
+        elif not down and self.credit_was_down:
+            if target and target == self.credit_pressed:
+                self.link_requests.put(target)
+            self.credit_pressed = None
+        if not target:
+            self.credit_pressed = None
+        self.credit_was_down = down
 
     # -- drawing -----------------------------------------------------------
     def draw_intro(self, now, dt):
@@ -691,7 +760,7 @@ class BilliardsOverlay:
             width = max(1, round(width))
             height = max(1, round(height))
             template = self.templates[index]
-            source = self.sources[index]
+            source = self.intro_sources[index]
             left, top, center, bottom = self.anchors[index]
             sprite_extent = math.ceil(math.hypot(width, height)) + 4
             frame = Image.new('RGBA', (max(math.ceil(template.width * 2), sprite_extent),

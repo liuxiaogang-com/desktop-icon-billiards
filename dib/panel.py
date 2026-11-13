@@ -17,7 +17,7 @@ import win32gui
 
 from PIL import Image, ImageTk
 
-from . import card
+from . import card, diag
 
 BG = '#0e1a18'
 CARD = '#152623'
@@ -148,11 +148,11 @@ class MainPanel:
                 ('restart', '重新开始', callbacks['restart'], 'primary', True),
                 ('guide', '辅助线', callbacks['toggle_guide'], 'on', False),
                 ('rank', '排名', callbacks['toggle_rank'], 'off', False),
+                ('leaderboard', '排行榜', callbacks['leaderboard'], 'soft', False),
                 # ('hide', '隐藏', None, 'soft', False),
                 ('felt', '台面', callbacks['toggle_felt'], 'ghost', False),
                 ('update', '检查更新', callbacks['check_updates'], 'ghost', False),
-                ('donate', '打赏', callbacks['donate'], 'gold', False),
-                ('quit', '退出', callbacks['quit'], 'soft', False)):
+                ('donate', '打赏', callbacks['donate'], 'gold', False)):
             look = self.look.get(key, {})
             pill = Pill(self.shell, look.get('text', text), command, look.get('kind', kind),
                         bold=bold, padx=8, pady=4)
@@ -163,6 +163,8 @@ class MainPanel:
             link = tk.Label(self.shell, text=credit, font=(FONT, 8), fg=MUTED, bg=BG, padx=8, cursor='hand2')
             link.pack(side='left')
             link.bind('<ButtonRelease-1>', lambda event: callbacks['open_credit']())
+        self.pills['quit'] = Pill(self.shell, '退出', callbacks['quit'], 'soft', padx=8, pady=4)
+        self.pills['quit'].pack(side='left', padx=(4, 0))
         root.update_idletasks()
 
     def _draggable(self, widget):
@@ -211,6 +213,9 @@ class ResultDialog:
         self.top = tk.Toplevel(root)
         top = self.top
         top.title('清台完成')
+        for event in ('<Map>', '<Unmap>', '<Destroy>'):
+            top.bind(event, lambda e, name=event: diag.log(f'result window event: {name}')
+                     if e.widget is top else None, add='+')
         top.configure(bg=BG)
         top.transient(root)
         top.resizable(False, False)
@@ -278,6 +283,7 @@ class ResultDialog:
 
     def close(self):
         if self.alive():
+            diag.log('result close requested')
             self.top.destroy()
         self.top = None
 
@@ -286,6 +292,8 @@ class ResultDialog:
             return
         self.last = view
         self.image = card.render_card(view, credit=self.credit, site=self.site)
+        diag.log(f'result rendered: rank_phase={view["rank"]["phase"]} '
+                 f'window_state={self.top.state()} visible={self.top.winfo_viewable()}')
         if view['rank']['phase'] == 'off':
             self.offer.pack(side='right')
         else:

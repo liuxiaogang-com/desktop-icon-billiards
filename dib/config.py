@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import urlencode
 
 from . import __version__
 
@@ -20,8 +21,11 @@ AUTHOR = 'LXG'
 # table, so screenshots and recordings of the game keep their source.
 CREDIT = 'GitHub@liuxiaogang-com'
 CREDIT_URL = 'https://github.com/liuxiaogang-com'
-# The project's landing page, printed on the shareable result card.
-SITE_TEXT = 'go.liuxiaogang.com/zmtq'
+REPOSITORY_URL = 'https://github.com/liuxiaogang-com/desktop-icon-billiards'
+DOUYIN_CREDIT = '作者抖音 @LLLLLLLLLL'
+DOUYIN_URL = 'https://go.liuxiaogang.com/douyin?' + urlencode({'app': INTERNAL_NAME, 'version': VERSION})
+# Author credit printed on the shareable result card.
+SITE_TEXT = DOUYIN_CREDIT
 WINDOW_TITLE = f'{PRODUCT_NAME} {VERSION}'
 
 BASE = Path(__file__).resolve().parent.parent

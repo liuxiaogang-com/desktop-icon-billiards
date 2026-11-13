@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import Mock, patch
 
-from dib.shell import _find_desktop
+from dib.shell import _find_desktop, ShellDesktop
 
 
 class DesktopDiscoveryTests(unittest.TestCase):
@@ -28,3 +28,39 @@ class DesktopDiscoveryTests(unittest.TestCase):
         with self.assertRaises(PermissionError) as caught:
             _find_desktop(Mock(side_effect=error))
         self.assertIs(caught.exception, error)
+
+
+class DesktopDisplayNameTests(unittest.TestCase):
+    def desktop(self):
+        desktop = object.__new__(ShellDesktop)
+        desktop.folder = Mock()
+        desktop.shellcon = Mock(SHGDN_NORMAL=0)
+        desktop.cache = {r'C:\Users\example\Desktop\报告.lnk': object(),
+                         '::{645FF040-5081-101B-9F08-00AA002F954E}': object()}
+        return desktop
+
+    def test_screenshot_com_failure_keeps_item_and_next_label_readable(self):
+        import pywintypes
+
+        desktop = self.desktop()
+        identities = list(desktop.cache)
+        cached = desktop.cache.copy()
+        desktop.folder.GetDisplayNameOf.side_effect = [
+            pywintypes.com_error(-2147467259, '未指定的错误', None, None), '回收站']
+        with patch('dib.diag.log') as log:
+            names = [desktop.display_name(identity) for identity in identities]
+        self.assertEqual(names, ['', '回收站'])
+        self.assertEqual(desktop.cache, cached)
+        self.assertIn('80004005', log.call_args.args[0])
+        self.assertNotIn(identities[0], log.call_args.args[0])
+
+    def test_virtual_item_failure_or_empty_name_omits_label(self):
+        import pywintypes
+
+        desktop = self.desktop()
+        identity = list(desktop.cache)[1]
+        desktop.folder.GetDisplayNameOf.side_effect = [
+            pywintypes.com_error(-2147467259, '未指定的错误', None, None), '', '   ']
+        with patch('dib.diag.log'):
+            for _ in range(3):
+                self.assertEqual(desktop.display_name(identity), '')

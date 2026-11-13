@@ -15,6 +15,28 @@ def _credit_font(size):
         return ImageFont.load_default(size)
 
 
+def credit_layout(table, credit):
+    """Share the text positions and hit rectangles in desktop coordinates."""
+    left, top, right, bottom = table.bounds
+    font = _credit_font(round(max(11, table.height / 66)))
+    margin = table.work_area[3] - bottom if table.desktop else 0
+    lines = credit.splitlines()
+    cx = left + table.width * .75
+    cy = bottom + max(14, margin * .46)
+    draw = ImageDraw.Draw(Image.new('RGBA', (1, 1)))
+    boxes = [draw.textbbox((0, 0), line, font=font, anchor='mm', stroke_width=1) for line in lines]
+    heights = [box[3] - box[1] + 6 for box in boxes]
+    total = sum(heights) + 2 * (len(lines) - 1)
+    cursor = bottom + (margin - total) / 2
+    rows = []
+    for index, line in enumerate(lines):
+        y = cy if len(lines) == 1 else cursor + 3 - boxes[index][1]
+        rect = draw.textbbox((cx, y), line, font=font, anchor='mm', stroke_width=1)
+        rows.append((line, cx, y, (rect[0] - 3, rect[1] - 3, rect[2] + 3, rect[3] + 3)))
+        cursor += heights[index] + 2
+    return font, rows
+
+
 def table_art(table, wallpaper=None, credit=None, pockets=True):
     """Draw the table frame and pockets; returns ``(frame, origin_x, origin_y)``.
 
@@ -65,12 +87,10 @@ def table_art(table, wallpaper=None, credit=None, pockets=True):
             draw.ellipse((x - r + inset, y - r + inset, x + r - inset, y + r - inset),
                          fill=(4, 10, 11, 120 if minimal else 255))
     if credit:
-        font = _credit_font(round(max(11, height / 66)))
-        margin = (table.work_area[3] - bottom) if table.desktop else 0
-        cx = left + width * .75 - origin_x
-        cy = bottom - origin_y + max(14, margin * .46)
-        draw.text((cx, cy), credit, font=font, anchor='mm', fill=(255, 255, 255, 140),
-                  stroke_width=1, stroke_fill=(0, 0, 0, 90))
+        font, rows = credit_layout(table, credit)
+        for line, cx, cy, _ in rows:
+            draw.text((cx - origin_x, cy - origin_y), line, font=font, anchor='mm',
+                      fill=(255, 255, 255, 140), stroke_width=1, stroke_fill=(0, 0, 0, 90))
     return frame, origin_x, origin_y
 
 
