@@ -28,8 +28,10 @@ from .config import CREDIT
 from .art import charge_art, cue_art, guide_art, pocket_particles, table_art, white_art
 from .balls import MAX_BALLS, ball_summary, fill_sources, priority_order
 from .display import monitors
+from .netplay import LOGICAL_BOUNDS, VERSUS_BALLS
 from .shell import ShellDesktop
-from .table import MIN_SHOT_CHARGE, BilliardsMotion
+from .table import EXIT_SECONDS, MIN_SHOT_CHARGE, BilliardsMotion
+from .versus_sync import VersusLink
 from .wallpaper import primary_wallpaper
 
 BALL_CANVAS = 128
@@ -42,6 +44,56 @@ LUMA_CELL = 8  # wallpaper pixels per cell of the brightness map
 WS_EX_LAYERED = 0x80000
 WS_EX_NOACTIVATE = 0x08000000
 SM_SWAPBUTTON = 23
+
+
+class Viewport:
+    """Maps the logical table rectangle onto desktop pixels, uniformly and centred.
+
+    A turn-based LAN match must agree on one table geometry, but the two machines have
+    different screens, so the table lives in ``LOGICAL_BOUNDS`` and each client letterboxes
+    it into its own work area. The scale is the same on both axes, so balls stay round and
+    every distance the physics produces maps to a proportional distance on screen.
+    """
+
+    __slots__ = ('scale', 'offset', 'origin')
+
+    def __init__(self, scale=1.0, offset=(0.0, 0.0), origin=(0.0, 0.0)):
+        self.scale = scale
+        self.offset = offset
+        # Logical origin, so ``to_parent`` works for any table rectangle.
+        self.origin = origin
+
+    @classmethod
+    def identity(cls):
+        return cls(1.0, (0.0, 0.0), (0.0, 0.0))
+
+    @classmethod
+    def fit(cls, bounds, target):
+        """Letterbox ``bounds`` (logical) inside ``target`` (parent pixels), centred."""
+        left, top, right, bottom = bounds
+        width, height = right - left, bottom - top
+        tx0, ty0, tx1, ty1 = target
+        scale = min((tx1 - tx0) / max(1., width), (ty1 - ty0) / max(1., height))
+        offset_x = tx0 + ((tx1 - tx0) - width * scale) / 2
+        offset_y = ty0 + ((ty1 - ty0) - height * scale) / 2
+        return cls(scale, (offset_x - left * scale, offset_y - top * scale), (left, top))
+
+    @property
+    def is_identity(self):
+        return self.scale == 1.0 and self.offset == (0.0, 0.0)
+
+    def to_parent(self, x, y):
+        if self.is_identity:
+            return x, y
+        return self.offset[0] + x * self.scale, self.offset[1] + y * self.scale
+
+    def to_table(self, x, y):
+        if self.is_identity:
+            return x, y
+        return (x - self.offset[0]) / self.scale, (y - self.offset[1]) / self.scale
+
+    def length(self, value):
+        return value if self.is_identity else value * self.scale
 
 
 class ImageFactory(comtypes.IUnknown):
@@ -232,8 +284,10 @@ class LayerSurface:
 
     def present(self, frame, x=None, y=None):
         if x is not None:
-            # Layered child windows take coordinates relative to their parent.
-            self.point = (x, y)
+            # Layered child windows take whole pixels relative to their parent. The versus
+            # viewport maps logical coordinates through a scale, so callers can hand us
+            # floats; Win32 refuses them here rather than complaining later.
+            self.point = (int(round(x)), int(round(y)))
         if frame is not self.last_frame:
             data = frame.convert('RGBa').tobytes('raw', 'BGRa')
             ctypes.memmove(self.bits, data, len(data))
@@ -260,10 +314,10 @@ class TablePointer:
         self.held_since = None
         self.charge_origin = None
 
-    def update(self, game, now, x, y, down, over_table):
-        if over_table:
+    def update(self, game, now, x, y, down, over_table, active=True):
+        if active and over_table:
             game.aim_at(x, y)
-        if down and not self.was_down and over_table:
+        if down and not self.was_down and over_table and active:
             if game.state == 'ball_in_hand':
                 game.place_white(x, y)
             elif game.state == 'ready':
@@ -275,7 +329,7 @@ class TablePointer:
             if not down:
                 self.held_since = None
                 self.charge_origin = None
-                if over_table:
+                if over_table and active:
                     game.shoot(max(MIN_SHOT_CHARGE, power), now)
                 else:
                     game.charge = 0.0
@@ -315,6 +369,28 @@ class BilliardsOverlay:
         self.restart_requested = threading.Event()
         self.pointer = TablePointer()
         self.table_windows = {}
+        # LAN versus: non-identity viewport, an authoritative or mirroring table, and the
+        # transport handed over by the UI thread. ``versus_role`` is None while playing alone.
+        self.view = Viewport.identity()
+        self.versus_role = None
+        self.versus_names = ('我', '对手')
+        self.versus_session = None
+        self.versus_status = ''
+        self.disconnect_reason = ''
+        self.solo_table = None
+        self.ball_canvas = BALL_CANVAS
+        self.wallpaper = None
+        self.logical_wallpaper = None
+        self.luma_map_logical = None
+        # The traffic pump lives in :mod:`dib.versus_sync` so it can be tested headlessly.
+        self.link = None
+        self.nack_note = ''
+        # Set when a table swap recreates the layered windows, so they get restacked once.
+        self.zorder_dirty = False
+        # The Tk thread only leaves a request here; the animation thread owns every window,
+        # so it performs the swap itself, exactly like ``want_hidden`` and ``want_felt``.
+        self._versus_request = None
+        self.versus_error = ''
         self.guide_enabled = True
         self.guide_key = None
         self.guide_drawn = 0.0
@@ -451,6 +527,13 @@ class BilliardsOverlay:
                 self.luma_map = wallpaper.convert('L').resize(
                     (max(1, wallpaper.width // LUMA_CELL), max(1, wallpaper.height // LUMA_CELL)),
                     Image.Resampling.BOX)
+                # The same picture in logical space, for the letterboxed LAN table.
+                logical = (max(1, round(LOGICAL_BOUNDS[2])), max(1, round(LOGICAL_BOUNDS[3])))
+                self.wallpaper = wallpaper
+                self.logical_wallpaper = wallpaper.resize(logical, Image.Resampling.BILINEAR)
+                self.luma_map_logical = self.logical_wallpaper.convert('L').resize(
+                    (max(1, logical[0] // LUMA_CELL), max(1, logical[1] // LUMA_CELL)),
+                    Image.Resampling.BOX)
             self.rail_frame = table_art(self.table, wallpaper, CREDIT)
         finally:
             comtypes.CoUninitialize()
@@ -501,9 +584,132 @@ class BilliardsOverlay:
             self.poses.append((left + center, top + bottom - source.height / 2,
                                source.width, source.height, 0, 0, 1.0))
         self.table = BilliardsMotion(self.primary_bounds, [source.size for source in self.sources])
+        self.solo_table = self.table
+        self.ball_canvas = self.canvas_for(self.table)
         # All icons share the collision radius. Prepare the six immutable layers
         # once so simultaneous impacts never resize the same artwork per ball.
         self.ring_frames = {level: self.ring_layer(level) for level in range(1, RING_LEVELS + 1)}
+
+    def canvas_for(self, table):
+        """Sprite canvas big enough for the largest rotated ball this table can produce."""
+        reach = math.hypot(table.tile * 1.85, table.tile * 1.85) + 8
+        if self.view.is_identity:
+            return max(BALL_CANVAS, math.ceil(reach))
+        return max(BALL_CANVAS, math.ceil(reach * self.view.scale))
+
+    # -- LAN versus -------------------------------------------------------
+    def enter_versus(self, session, role, names=('我', '对手')):
+        """Swap in the shared logical rack and start mirroring ``session``."""
+        if role not in ('host', 'guest'):
+            raise ValueError(f'unknown versus role: {role!r}')
+        if self.versus_role is not None:
+            return
+        if self.hidden or not self.windows:
+            raise RuntimeError('请等桌面图标摆好后再联机')
+        # Pillow sizes the table artwork from ``work_area``, which must be whole pixels, so
+        # the logical rectangle is quantised here rather than deep inside the drawing code.
+        bounds = tuple(int(round(value)) for value in LOGICAL_BOUNDS)
+        table = BilliardsMotion(bounds, [source.size for source in self.sources],
+                                count=VERSUS_BALLS)
+        table.authoritative = role == 'host'
+        table.local_side = 0 if role == 'host' else 1
+        table.start_versus(VERSUS_BALLS, first=0)
+        self.versus_session = session
+        self.versus_role = role
+        self.versus_names = tuple(names)
+        self.view = Viewport.fit(bounds, self.primary_bounds)
+        self.versus_status = ''
+        self.disconnect_reason = ''
+        self.nack_note = ''
+        self.install_table(table)
+        diag.log(f'versus started: role={role} scale={self.view.scale:.4f} '
+                 f'balls={VERSUS_BALLS} bounds={LOGICAL_BOUNDS}')
+
+    def leave_versus(self, reason=''):
+        """Drop back to the local single-player table."""
+        if self.versus_role is None:
+            return
+        role = self.versus_role
+        self.versus_role = None
+        self.versus_session = None
+        self.link = None
+        self.versus_status = ''
+        self.disconnect_reason = ''
+        self.nack_note = ''
+        self.view = Viewport.identity()
+        table = BilliardsMotion(self.primary_bounds, [source.size for source in self.sources])
+        self.solo_table = table
+        self.install_table(table)
+        diag.log(f'versus ended ({role}): {reason or "left"}')
+
+    def install_table(self, table):
+        """Point the overlay at ``table`` and rebuild every cached layer around it."""
+        self.clear_table()
+        self.table = table
+        self.pointer = TablePointer()
+        self.drawn = [None] * len(self.items)
+        self.guide_key = self.cue_key = self.charge_key = None
+        self.guide_drawn = 0.0
+        self.white_position = None
+        self.transition = None
+        # ``draw_balls`` writes poses by index, so the list must already be as long as the
+        # window set even before the first frame of the new table (a swap to the 15 ball
+        # versus rack would otherwise index past the end of an empty list).
+        self.poses = [None] * max(len(self.items), len(table.icons))
+        self.frame_cache = OrderedDict()
+        self.frame_cache_bytes = 0
+        self.ball_canvas = self.canvas_for(table)
+        self.ring_frames = {level: self.ring_layer(level) for level in range(1, RING_LEVELS + 1)}
+        self.refresh_rail()
+        self.show_table_windows(len(table.icons))
+        # The table windows were just destroyed and will be recreated over the next frames;
+        # restack them once they all exist so the felt never covers the ball and the cue.
+        self.zorder_dirty = True
+        self.link = (VersusLink(table, self.versus_session, self.versus_role)
+                     if self.versus_role is not None and self.versus_session is not None else None)
+
+    def show_table_windows(self, count):
+        """Show the icon windows the current table uses and hide the surplus ones."""
+        for index, hwnd in enumerate(self.windows):
+            if not win32gui.IsWindow(hwnd):
+                continue
+            win32gui.ShowWindow(hwnd, win32con.SW_SHOWNOACTIVATE if index < count else win32con.SW_HIDE)
+
+    def refresh_rail(self):
+        """Render the frame and pockets for the current table, scaled when letterboxed."""
+        if self.table is None:
+            return
+        wallpaper = self.logical_wallpaper if self.versus_role else self.wallpaper
+        frame, origin_x, origin_y = table_art(self.table, wallpaper, CREDIT)
+        if not self.view.is_identity:
+            size = (max(1, round(frame.width * self.view.scale)),
+                    max(1, round(frame.height * self.view.scale)))
+            frame = frame.resize(size, Image.Resampling.LANCZOS)
+            origin_x, origin_y = self.view.to_parent(origin_x, origin_y)
+        self.rail_frame = (frame, round(origin_x), round(origin_y))
+
+    def pointer_active(self):
+        """Whether the local player may aim, charge or place the white ball right now."""
+        if self.link is None:
+            return True
+        return self.link.pointer_active()
+
+    def cue_visible(self):
+        """The cue and the aim guide belong to whoever holds the table."""
+        if self.link is None:
+            return True
+        table = self.table
+        return int(getattr(table, 'turn', 0)) == int(getattr(table, 'local_side', 0))
+
+    def advance_exits(self, dt):
+        """Age the sinking icons on the mirroring client, which never runs the physics."""
+        table = self.table
+        exits = getattr(table, 'exits', None)
+        if not exits:
+            return
+        table.exits = {index: (x, y, tx, ty, age + dt)
+                       for index, (x, y, tx, ty, age) in exits.items()
+                       if age + dt < EXIT_SECONDS}
 
     # -- lifecycle ---------------------------------------------------------
     def show(self, snapshot, journal):
@@ -529,6 +735,48 @@ class BilliardsOverlay:
 
     def request_restart(self):
         self.restart_requested.set()
+
+    def request_versus(self, session, role, names=('我', '对手')):
+        """Ask the animation thread to switch to the shared LAN table.
+
+        The Tk thread must never create or destroy the layered windows, so it only leaves
+        this request; :meth:`apply_versus_request` performs it between two frames.
+        """
+        self.versus_error = ''
+        self._versus_request = (session, role, tuple(names))
+
+    def request_leave_versus(self, reason=''):
+        """Ask the animation thread to give the table back to single-player mode."""
+        self._versus_request = (None, 'leave', (reason,))
+
+    def apply_versus_request(self):
+        """Run whatever :meth:`request_versus` queued; called by the animation thread."""
+        request, self._versus_request = self._versus_request, None
+        if request is None:
+            return
+        session, role, payload = request
+        try:
+            if role == 'leave':
+                self.leave_versus(payload[0])
+            else:
+                self.enter_versus(session, role, payload)
+        except Exception as error:
+            self.versus_error = str(error)
+            diag.log(f'versus request failed: {error!r}')
+            if role != 'leave' and self.versus_role is not None:
+                # A half-swapped overlay would keep drawing a table nobody owns; fall back
+                # to the local one rather than leaving the game wedged. A request that was
+                # refused before touching anything (hidden table, not shown yet) keeps the
+                # round the player is already in.
+                try:
+                    self.versus_role = None
+                    self.versus_session = None
+                    self.link = None
+                    self.view = Viewport.identity()
+                    self.install_table(BilliardsMotion(
+                        self.primary_bounds, [source.size for source in self.sources]))
+                except Exception as recovery:
+                    diag.log(f'versus recovery failed: {recovery!r}')
 
     def set_hidden(self, hidden, now):
         """Hide every game window and show the real icons again (or the reverse), pausing the round."""
@@ -575,32 +823,51 @@ class BilliardsOverlay:
                 raise RuntimeError('屏幕布局或 DPI 缩放变化，已恢复桌面，请重新开始。')
         if self.transition is None and self.want_hidden != self.hidden:
             self.set_hidden(self.want_hidden, now)
+        self.apply_versus_request()
         if self.hidden:
             return  # the real desktop is showing: draw and simulate nothing
         if self.transition is None and self.want_felt != self.felt_visible:
             self.set_felt(self.want_felt)
+        if self.link is not None:
+            self.link.pump(now)
+            self.disconnect_reason = self.link.disconnect_reason
+            self.nack_note = self.link.nack_note
         if self.transition is not None:
             self.draw_intro(now, dt)
         else:
             if self.restart_requested.is_set():
                 self.restart_requested.clear()
-                self.table.reset()
-                self.pointer = TablePointer()
-                self.drawn = [None] * len(self.items)
+                self.restart_table()
             self.update_pointer(now)
-            self.table.step(dt, now)
+            if self.versus_role is None or self.table.authoritative:
+                self.table.step(dt, now)
+            else:
+                self.advance_exits(dt)
             self.draw_balls()
         self.draw_table()
         self.draw_guide()
         self.draw_charge()
+        if self.zorder_dirty and {'rail', 'guide', 'white'} <= set(self.table_windows):
+            self.zorder_dirty = False
+            self.stack_table_windows()
+
+    def restart_table(self):
+        """Reset the round here, or ask the host to do it when this client only mirrors."""
+        if self.link is not None:
+            self.link.restart()
+        else:
+            self.table.reset()
+        self.pointer = TablePointer()
+        self.drawn = [None] * len(self.items)
 
     def update_pointer(self, now):
         screen = win32gui.GetCursorPos()
         x, y = win32gui.ScreenToClient(self.parent, screen)
+        tx, ty = self.view.to_table(x, y)
         left, top, right, bottom = self.table.bounds
         on_desktop = False
         blocked = None
-        if left <= x <= right and top <= y <= bottom:
+        if left <= tx <= right and top <= ty <= bottom:
             hwnd = win32gui.WindowFromPoint(screen)
             top_window = win32gui.GetAncestor(hwnd, win32con.GA_ROOT) if hwnd else 0
             if top_window:
@@ -618,7 +885,7 @@ class BilliardsOverlay:
         # primary (logical left) button is the physical right one.
         button = win32con.VK_RBUTTON if win32api.GetSystemMetrics(SM_SWAPBUTTON) else win32con.VK_LBUTTON
         down = bool(win32api.GetAsyncKeyState(button) & 0x8000)
-        self.pointer.update(self.table, now, x, y, down, on_desktop)
+        self.pointer.update(self.table, now, tx, ty, down, on_desktop, self.pointer_active())
 
     # -- drawing -----------------------------------------------------------
     def draw_intro(self, now, dt):
@@ -660,6 +927,7 @@ class BilliardsOverlay:
             self.drawn = [None] * len(self.items)
 
     def draw_balls(self):
+        view = self.view
         for index, (hwnd, values) in enumerate(zip(self.windows, self.table.poses)):
             self.poses[index] = values
             cx, cy, width, height, angle, _shift, _label = values
@@ -668,15 +936,20 @@ class BilliardsOverlay:
             effect = self.table.exit_visual(index + 1) if not alpha else None
             fade = 0.0
             if effect:
-                cx, cy, fade, scale, spin = effect
-                width = max(1, round(width * scale))
-                height = max(1, round(height * scale))
+                cx, cy, fade, shrink, spin = effect
+                width = max(1, round(width * shrink))
+                height = max(1, round(height * shrink))
                 angle = round(angle + spin)
                 alpha = round(255 * (1 - fade) ** 1.35)
                 self.poses[index] = (cx, cy, width, height, angle, 0, 0.0)
             # A faint ring flashes at the collision radius while a ball is being hit.
             impact = self.table.icons[index].impact
             ring = min(RING_LEVELS, math.ceil(impact / MAX_IMPACT * RING_LEVELS)) if alpha == 255 and impact > .012 else 0
+            if not view.is_identity:
+                # Poses stay in table units; only the blit is letterboxed.
+                cx, cy = view.to_parent(cx, cy)
+                width = max(1, round(width * view.scale))
+                height = max(1, round(height * view.scale))
             key = ((round(cx), round(cy), width, height, angle, alpha, round(fade * 40), ring)
                    if alpha or effect else (0,))
             if self.drawn[index] == key:
@@ -684,26 +957,27 @@ class BilliardsOverlay:
             frame = self.sprite_frame(self.sources[index], index, width, height, angle, alpha, ring)
             if fade:
                 frame = pocket_particles(frame, index, fade)
-            self.present(hwnd, frame, round(cx - BALL_CANVAS / 2), round(cy - BALL_CANVAS / 2))
+            self.present(hwnd, frame, round(cx - self.ball_canvas / 2), round(cy - self.ball_canvas / 2))
             self.drawn[index] = key
 
     def sprite_frame(self, source, identity, width, height, angle, alpha=255, ring=0):
-        key = (identity, width, height, angle, BALL_CANVAS, alpha, ring)
+        side = getattr(self, 'ball_canvas', BALL_CANVAS)
+        key = (identity, width, height, angle, side, alpha, ring)
         if key in self.frame_cache:
             self.frame_cache.move_to_end(key)
             return self.frame_cache[key]
-        frame = Image.new('RGBA', (BALL_CANVAS, BALL_CANVAS))
+        frame = Image.new('RGBA', (side, side))
         if alpha:
             picture = source.resize((width, height), Image.Resampling.BICUBIC)
             picture = picture.rotate(angle, Image.Resampling.BICUBIC, expand=True)
             if alpha < 255:
                 picture.putalpha(picture.getchannel('A').point([value * alpha // 255 for value in range(256)]))
-            frame.alpha_composite(picture, ((BALL_CANVAS - picture.width) // 2,
-                                            (BALL_CANVAS - picture.height) // 2))
+            frame.alpha_composite(picture, ((side - picture.width) // 2,
+                                            (side - picture.height) // 2))
             if ring:
                 frame.alpha_composite(self.ring_frames[ring])
         self.frame_cache[key] = frame
-        self.frame_cache_bytes += BALL_CANVAS * BALL_CANVAS * 4
+        self.frame_cache_bytes += side * side * 4
         while len(self.frame_cache) > 256 or self.frame_cache_bytes > 16 * 1024 * 1024:
             _, old = self.frame_cache.popitem(last=False)
             self.frame_cache_bytes -= old.width * old.height * 4
@@ -712,14 +986,16 @@ class BilliardsOverlay:
     def ring_layer(self, level):
         """The collision circle of one ball, drawn very faintly (``level`` 1..RING_LEVELS)."""
         scale = 3
-        layer = Image.new('RGBA', (BALL_CANVAS * scale, BALL_CANVAS * scale))
-        radius = self.table.radius * scale
-        centre = BALL_CANVAS * scale / 2
+        side = getattr(self, 'ball_canvas', BALL_CANVAS)
+        view = getattr(self, 'view', None)
+        radius = (view.length(self.table.radius) if view is not None else self.table.radius) * scale
+        centre = side * scale / 2
+        layer = Image.new('RGBA', (side * scale, side * scale))
         box = (centre - radius, centre - radius, centre + radius, centre + radius)
         alpha = round(28 + 12 * level)
         draw = ImageDraw.Draw(layer)
         draw.ellipse(box, fill=(190, 255, 232, alpha // 5), outline=(190, 255, 232, alpha), width=2 * scale)
-        return layer.resize((BALL_CANVAS, BALL_CANVAS), Image.Resampling.LANCZOS)
+        return layer.resize((side, side), Image.Resampling.LANCZOS)
 
     def table_window(self, part):
         hwnd = win32gui.CreateWindowEx(
@@ -734,15 +1010,25 @@ class BilliardsOverlay:
                               win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE | flags)
 
     def stack_table_windows(self):
-        """Keep the wallpaper behind the icons and the shot controls above them."""
-        self.position_layer(self.table_windows['guide'], win32con.HWND_BOTTOM)
-        self.position_layer(self.table_windows['rail'], win32con.HWND_BOTTOM)
+        """Keep the wallpaper behind the icons and the shot controls above them.
+
+        Called from ``show()`` for a fresh game and again from ``draw()`` after a table swap:
+        ``install_table()`` recreates these windows, and new children land in creation order,
+        which would leave the opaque felt layer above the cue ball and the cue.
+        """
+        guide = self.table_windows.get('guide')
+        rail = self.table_windows.get('rail')
+        if guide is not None:
+            self.position_layer(guide, win32con.HWND_BOTTOM)
+        if rail is not None:
+            self.position_layer(rail, win32con.HWND_BOTTOM)
         for part in ('white', 'cue', 'charge'):
             if part in self.table_windows:
                 self.position_layer(self.table_windows[part], win32con.HWND_TOP)
 
     def draw_table(self):
         table = self.table
+        view = self.view
         if 'rail' not in self.table_windows:
             hwnd = self.table_window('rail')
             self.present(hwnd, *self.rail_frame)
@@ -752,7 +1038,7 @@ class BilliardsOverlay:
         white = table.white
         if 'white' not in self.table_windows:
             self.table_window('white')
-            self.white_frame = white_art(white.radius, shaded=True)
+            self.white_frame = white_art(view.length(white.radius), shaded=True)
             self.white_position = None
         hwnd = self.table_windows['white']
         if table.white_sunk:
@@ -760,7 +1046,8 @@ class BilliardsOverlay:
                 win32gui.ShowWindow(hwnd, win32con.SW_HIDE)
             self.white_position = None
         else:
-            position = (round(white.x - self.white_frame.width / 2), round(white.y - self.white_frame.height / 2))
+            wx, wy = view.to_parent(white.x, white.y)
+            position = (round(wx - self.white_frame.width / 2), round(wy - self.white_frame.height / 2))
             if self.white_position != position:
                 self.present(hwnd, self.white_frame, *position)
                 if self.white_position is None:
@@ -768,16 +1055,21 @@ class BilliardsOverlay:
                                         win32con.SWP_SHOWWINDOW | win32con.SWP_NOZORDER)
                 self.white_position = position
         cue = table.cue()
+        if cue is not None and not self.cue_visible():
+            # Waiting for the opponent: no cue, no line, nothing that looks shootable.
+            cue = None
         if cue is None:
             if self.cue_key is not None:
                 win32gui.ShowWindow(self.table_windows['cue'], win32con.SW_HIDE)
                 self.cue_key = None
             return
+        if not view.is_identity:
+            cue = tuple(view.to_parent(point[0], point[1]) for point in cue)
         key = tuple(round(value) for point in cue for value in point)
         if key == self.cue_key:
             return
         hwnd = self.table_windows.get('cue') or self.table_window('cue')
-        self.present(hwnd, *cue_art(cue, thickness=1.65))
+        self.present(hwnd, *cue_art(cue, thickness=1.65 * view.scale))
         if self.cue_key is None:
             self.position_layer(hwnd, win32con.HWND_TOP,
                                 win32con.SWP_SHOWWINDOW | win32con.SWP_NOZORDER)
@@ -785,15 +1077,19 @@ class BilliardsOverlay:
 
     def background_luma(self, x, y):
         """Wallpaper brightness (0-255) under a table point, or None without a readable wallpaper."""
-        if self.luma_map is None:
+        if self.versus_role is not None:
+            source, origin_x, origin_y = self.luma_map_logical, LOGICAL_BOUNDS[0], LOGICAL_BOUNDS[1]
+        else:
+            source, origin_x, origin_y = self.luma_map, self.table.work_area[0], self.table.work_area[1]
+        if source is None:
             return None
-        origin_x, origin_y = self.table.work_area[:2]
         px, py = int((x - origin_x) // LUMA_CELL), int((y - origin_y) // LUMA_CELL)
-        width, height = self.luma_map.size
-        return self.luma_map.getpixel((px, py)) if 0 <= px < width and 0 <= py < height else None
+        width, height = source.size
+        return source.getpixel((px, py)) if 0 <= px < width and 0 <= py < height else None
 
     def draw_guide(self):
-        lines, circles = self.table.aim_preview() if self.guide_enabled and self.transition is None else ((), ())
+        lines, circles = self.table.aim_preview() if (self.guide_enabled and self.transition is None
+                                                      and self.cue_visible()) else ((), ())
         rounded = [(role, (round(x0), round(y0)), (round(x1), round(y1)))
                    for role, (x0, y0), (x1, y1) in lines]
         lines_key = tuple((role, start, end) for role, start, end in rounded if start != end)
@@ -807,7 +1103,14 @@ class BilliardsOverlay:
         if key is None:
             win32gui.ShowWindow(hwnd, win32con.SW_HIDE)
         else:
-            self.present(hwnd, *guide_art(key[0], key[1], self.background_luma))
+            frame, origin_x, origin_y = guide_art(key[0], key[1], self.background_luma)
+            if not self.view.is_identity:
+                # The preview is computed in table units, so enlarge the finished layer once.
+                frame = frame.resize((max(1, round(frame.width * self.view.scale)),
+                                      max(1, round(frame.height * self.view.scale))),
+                                     Image.Resampling.LANCZOS)
+                origin_x, origin_y = self.view.to_parent(origin_x, origin_y)
+            self.present(hwnd, frame, round(origin_x), round(origin_y))
             self.guide_drawn = clock
             if self.guide_key is None:
                 self.position_layer(hwnd, win32con.HWND_TOP, win32con.SWP_SHOWWINDOW | win32con.SWP_NOZORDER)
@@ -829,7 +1132,8 @@ class BilliardsOverlay:
         width, height = frame.size
 
         left, top, right, bottom = self.primary_bounds
-        x, y = origin
+        x, y = self.view.to_parent(origin[0], origin[1])
+        x, y = round(x), round(y)
         gap = self.charge_font.size
         x = x + gap if x + gap + width <= right else x - gap - width
         y = y + gap if y + gap + height <= bottom else y - gap - height
@@ -854,6 +1158,9 @@ class BilliardsOverlay:
         self.white_position = None
 
     def present(self, hwnd, frame, x, y):
+        # Win32 wants whole pixels and Pillow wants whole crop boxes. The letterboxed versus
+        # viewport produces floats, so normalise once here instead of auditing every caller.
+        x, y = int(round(x)), int(round(y))
         left, top, right, bottom = self.primary_bounds
         x0, y0 = max(left, x), max(top, y)
         x1, y1 = min(right, x + frame.width), min(bottom, y + frame.height)

@@ -111,6 +111,7 @@ class MainPanel:
     DEFAULT_LOOK = {
         'guide': {'text': '辅助线 开', 'kind': 'on'},
         'rank': {'text': '排名', 'kind': 'off'},
+        'versus': {'text': '联机', 'kind': 'soft'},
         # 'hide': {'text': '隐藏', 'kind': 'soft'},
         'felt': {'text': '台面 开', 'kind': 'ghost'},
         'update': {'text': '检查更新', 'kind': 'ghost'},
@@ -144,15 +145,21 @@ class MainPanel:
                 label = tk.Label(box, textvariable=variable, font=font, fg=color, bg=BG)
                 label.pack(side='left', padx=(0, 4))
                 self._draggable(label)
-        for key, text, command, kind, bold in (
-                ('restart', '重新开始', callbacks['restart'], 'primary', True),
-                ('guide', '辅助线', callbacks['toggle_guide'], 'on', False),
-                ('rank', '排名', callbacks['toggle_rank'], 'off', False),
-                # ('hide', '隐藏', None, 'soft', False),
-                ('felt', '台面', callbacks['toggle_felt'], 'ghost', False),
-                ('update', '检查更新', callbacks['check_updates'], 'ghost', False),
-                ('donate', '打赏', callbacks['donate'], 'gold', False),
-                ('quit', '退出', callbacks['quit'], 'soft', False)):
+        buttons = [
+            ('restart', '重新开始', callbacks['restart'], 'primary', True),
+            ('guide', '辅助线', callbacks['toggle_guide'], 'on', False),
+            ('rank', '排名', callbacks['toggle_rank'], 'off', False),
+            # ('hide', '隐藏', None, 'soft', False),
+            ('felt', '台面', callbacks['toggle_felt'], 'ghost', False),
+            ('update', '检查更新', callbacks['check_updates'], 'ghost', False),
+            ('donate', '打赏', callbacks['donate'], 'gold', False),
+            ('quit', '退出', callbacks['quit'], 'soft', False),
+        ]
+        # LAN versus is optional: the panel still builds on its own (previews, tests) when the
+        # app supplies no versus callback, and then no empty pill is shown.
+        if callbacks.get('versus') is not None:
+            buttons.insert(3, ('versus', '联机', callbacks['versus'], 'soft', False))
+        for key, text, command, kind, bold in buttons:
             look = self.look.get(key, {})
             pill = Pill(self.shell, look.get('text', text), command, look.get('kind', kind),
                         bold=bold, padx=8, pady=4)

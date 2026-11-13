@@ -4,6 +4,13 @@ The table is laid out inside the monitor work area, the white cue ball starts on
 the left and the desktop icons are racked on the right. The caller aims with
 :meth:`aim_at` and strikes with :meth:`shoot`; :meth:`step` advances the whole
 simulation, including pocket exits and the ball-in-hand state after a scratch.
+
+LAN versus (see ``docs/NETPLAY.md``) reuses the same class: both machines build the
+table from the shared logical bounds with a fixed ball count, so the rack, the rails
+and the pockets come out identical whatever the local icon sizes are. Only the host
+integrates the physics; the mirroring client feeds host snapshots into
+:meth:`apply_snapshot` and records local intents in :attr:`pending_shot` and
+:attr:`pending_place` instead of touching the balls.
 """
 import math
 from collections import defaultdict
@@ -18,17 +25,48 @@ BALL_IMPULSE = .96
 ROLLING_DRAG = .45
 STOP_SPEED = .008
 
+# The one table both versus machines build. ``netplay`` publishes the same values for the
+# transport and the renderer; table keeps its own copy so this module stays standalone.
+LOGICAL_BOUNDS = (0., 0., 1600., 900.)
+VERSUS_BALLS = 15
+
 
 class BilliardsMotion:
     """Positions and physics of the white ball and the desktop icon rack."""
 
-    def __init__(self, work_area, sizes):
+    def __init__(self, work_area, sizes, count=None):
         self.sizes = sizes
         # The game is always drawn directly on the desktop and always manual.
         self.desktop = True
         self.manual = True
         self.work_area = work_area
-        left, top, right, bottom = work_area
+        # LAN versus bookkeeping (docs/NETPLAY.md section 4). A single-player table stays
+        # authoritative on side 0, which keeps the default path bit-for-bit unchanged.
+        self.versus = False
+        self.turn = 0
+        self.scores = [0, 0]
+        self.outcome = 0
+        self.authoritative = True
+        self.local_side = 0
+        self.remote_ms = None
+        self.pending_shot = None
+        self.pending_place = None
+        self.shooter = 0
+        self.potted_this_shot = 0
+        # ``count=None`` keeps the original rule: one ball per icon.
+        self._layout(len(sizes) if count is None else count)
+        # Counts every (re)started round so observers can tell rounds apart.
+        self.round_serial = 0
+        self.reset()
+
+    def _layout(self, count):
+        """Size the bounded table and rack ``count`` balls on it.
+
+        Only the work area and the ball count decide the geometry, so two machines that
+        pass the same logical bounds build the same table whatever their icon sizes are.
+        """
+        self.count = max(0, int(count))
+        left, top, right, bottom = self.work_area
         width = right - left
         height = bottom - top
         self.bounds = (round(left + width * .06), round(top + height * .09),
@@ -40,22 +78,19 @@ class BilliardsMotion:
         self.pockets = ((left, top), (mid, top), (right, top),
                         (left, bottom), (mid, bottom), (right, bottom))
         self.pocket_radius = min(49, max(18, self.height * .047))
-        count = len(sizes)
-        columns = max(1, math.ceil((math.sqrt(8 * count + 1) - 1) / 2))
+        columns = max(1, math.ceil((math.sqrt(8 * self.count + 1) - 1) / 2))
         pitch = min(94, self.width * .45 / (columns + .5), self.height * .79 / columns)
+        self.pitch = pitch
         self.tile = min(64, pitch * .70)
         self.radius = pitch * .46
         self.white_radius = min(25, self.radius * .9)
         self.rack = []
         for column in range(columns):
-            depth = min(column + 1, count - len(self.rack))
+            depth = min(column + 1, self.count - len(self.rack))
             for i in range(depth):
                 x = left + self.width * .52 + column * pitch * .84
                 y = (top + bottom) / 2 + (i - (depth - 1) / 2) * pitch * .95
                 self.rack.append((x, y))
-        # Counts every (re)started round so observers can tell rounds apart.
-        self.round_serial = 0
-        self.reset()
 
     def reset(self):
         left, top, _, bottom = self.bounds
@@ -78,6 +113,9 @@ class BilliardsMotion:
         self.power = 0.
         self.charge = 0.
         self.break_shot = True
+        # Versus bookkeeping that is bound to a single stroke, not to the match.
+        self.shooter = self.turn
+        self.potted_this_shot = 0
         self.aim = self._aim()
         self.poses = self._poses()
 
@@ -90,7 +128,12 @@ class BilliardsMotion:
 
     @property
     def play_ms(self):
-        """Whole milliseconds since the first shot; frozen once the table is cleared."""
+        """Whole milliseconds since the first shot; frozen once the table is cleared.
+
+        A versus guest shows the host's clock through :attr:`remote_ms` instead of its own.
+        """
+        if self.remote_ms is not None:
+            return max(0, int(round(self.remote_ms)))
         if self.first_shot_at is None:
             return 0
         end = self.finished_at if self.finished_at is not None else self.clock
@@ -114,6 +157,96 @@ class BilliardsMotion:
             self.first_shot_at += gap
         self.paused_at = None
 
+    # -- LAN versus (docs/NETPLAY.md sections 4 and 5) ----------------------
+    def start_versus(self, count=VERSUS_BALLS, first=0):
+        """Restart as a versus round: fixed rack, clean scores and the given first shooter.
+
+        ``authoritative`` and ``local_side`` belong to the role and are left alone, so the
+        overlay can set them once when the session is established.
+        """
+        self._layout(count)
+        self.versus = True
+        self.turn = 1 if first else 0
+        self.scores = [0, 0]
+        self.outcome = 0
+        self.remote_ms = None
+        self.pending_shot = None
+        self.pending_place = None
+        self.reset()
+
+    def can_shoot(self):
+        """Whether this machine may strike the white ball right now."""
+        return self.state == 'ready' and int(self.turn) == int(self.local_side)
+
+    def snapshot(self):
+        """Return the JSON-safe table state a versus host ships to its guest."""
+        return {
+            'serial': int(self.round_serial),
+            'state': self.state,
+            'white': [round(self.white.x, 2), round(self.white.y, 2)],
+            'white_sunk': 1 if self.white_sunk else 0,
+            'balls': [[round(body.x, 2), round(body.y, 2), round(body.angle, 2),
+                       round(body.impact, 2)] for body in self.icons],
+            'sunk': [1 if index in self.sunk else 0 for index in range(len(self.bodies))],
+            'exits': {str(index): [round(x, 2), round(y, 2), round(tx, 2), round(ty, 2),
+                                   round(age, 2)]
+                      for index, (x, y, tx, ty, age) in self.exits.items()},
+            'turn': int(self.turn),
+            'scores': [int(self.scores[0]), int(self.scores[1])],
+            'shots': int(self.shots),
+            'ms': self.play_ms,
+            'outcome': int(self.outcome),
+            'charge': round(self.charge, 2),
+        }
+
+    def apply_snapshot(self, state):
+        """Mirror a host snapshot into this table, without starting a new round."""
+        balls = state.get('balls')
+        if balls is not None and len(balls) != len(self.icons):
+            # The host restarted with another ball count: rebuild the rack, then let the
+            # snapshot below overwrite every position. reset() bumps round_serial, but the
+            # serial carried by a snapshot always wins at the end of this method.
+            self._layout(len(balls))
+            self.reset()
+        white = state.get('white')
+        if white:
+            self.white.x, self.white.y = float(white[0]), float(white[1])
+        # The guest never simulates, so it must not keep velocities of its own either.
+        self.white.vx = self.white.vy = 0.
+        for body, values in zip(self.icons, balls or ()):
+            body.x, body.y = float(values[0]), float(values[1])
+            body.angle = float(values[2])
+            body.impact = float(values[3])
+            body.vx = body.vy = 0.
+        sunk = state.get('sunk') or ()
+        self.sunk = {index for index, flag in enumerate(sunk) if flag and index < len(self.bodies)}
+        self.white_sunk = bool(state.get('white_sunk'))
+        self.exits = {int(index): (float(values[0]), float(values[1]), float(values[2]),
+                                   float(values[3]), float(values[4]))
+                      for index, values in (state.get('exits') or {}).items()}
+        if state.get('state') is not None:
+            self.state = str(state['state'])
+        self.turn = 1 if state.get('turn') else 0
+        scores = state.get('scores') or ()
+        if len(scores) >= 2:
+            self.scores = [int(scores[0]), int(scores[1])]
+        if state.get('shots') is not None:
+            self.shots = int(state['shots'])
+        if state.get('outcome') is not None:
+            self.outcome = int(state['outcome'])
+        if state.get('ms') is not None:
+            self.remote_ms = int(state['ms'])
+        if state.get('charge') is not None:
+            # Display only: the overlay re-applies the local power while this side aims.
+            self.charge = float(state['charge'])
+        serial = state.get('serial')
+        if isinstance(serial, int) and serial != self.round_serial:
+            # A different serial means the host started a new round: adopt it, but never
+            # reset locally, because the snapshot itself carries the fresh table.
+            self.round_serial = serial
+        self.poses = self._poses()
+
+    # -- aiming and striking ----------------------------------------------
     def _aim(self):
         x, y = self.white.x, self.white.y
         targets = [body for index, body in enumerate(self.icons, 1) if index not in self.sunk]
@@ -175,6 +308,10 @@ class BilliardsMotion:
 
     def shoot(self, power, now=None):
         """Strike the white ball. ``now`` is the frame clock; the first shot starts the round timer."""
+        if not self.authoritative:
+            # The mirroring client only records the intent; the host owns the physics.
+            self.pending_shot = (self.aim, power)
+            return False
         if self.state != 'ready':
             return False
         self.state = 'stroke'
@@ -182,6 +319,8 @@ class BilliardsMotion:
         self.power = self._shot_speed(power)
         self.break_shot = False
         self.shots += 1
+        self.shooter = self.turn
+        self.potted_this_shot = 0
         if self.first_shot_at is None:
             self.first_shot_at = self.clock if now is None else now
             self.clock = max(self.clock, self.first_shot_at)
@@ -305,6 +444,9 @@ class BilliardsMotion:
         if self.state == 'finished':
             return
         self.clock = now
+        if not self.authoritative:
+            # The guest only renders snapshots; integrating here would fight the host.
+            return
         if self.state == 'return_white':
             self.ready_for += dt
             if self.ready_for >= .8:
@@ -339,6 +481,7 @@ class BilliardsMotion:
                     if index == 0:
                         self.white_sunk = True
                     else:
+                        self.potted_this_shot += 1
                         self._start_exit(index, body, pocket)
                 else:
                     self._walls(body)
@@ -367,7 +510,35 @@ class BilliardsMotion:
             else:
                 self.state = 'ready'
                 self.aim = self._aim()
+            if self.versus:
+                self._settle(cleared)
         self.poses = self._poses()
+
+    def _settle(self, cleared):
+        """Score the stroke that just stopped and hand the table to the right side.
+
+        The five versus rules are applied in the contract order: score the potted icons,
+        finish on a cleared table, hand over after a scratch, keep shooting after a pot and
+        otherwise pass the turn.
+        """
+        shooter = self.shooter
+        potted = self.potted_this_shot
+        self.potted_this_shot = 0
+        self.scores[shooter] += potted
+        if cleared:
+            self.state = 'finished'
+            if self.scores[0] > self.scores[1]:
+                self.outcome = 1
+            elif self.scores[1] > self.scores[0]:
+                self.outcome = 2
+            else:
+                self.outcome = 3
+            return
+        if self.white_sunk or not potted:
+            # A scratch is a foul, and a dry stroke passes the table either way.
+            self.turn = 1 - shooter
+        else:
+            self.turn = shooter
 
     def _in_pocket(self, body):
         capture = self.pocket_radius + body.radius * .55
@@ -399,6 +570,10 @@ class BilliardsMotion:
         return x + (tx - x) * travel, y + (ty - y) * travel, fade, scale, spin
 
     def place_white(self, x, y):
+        if not self.authoritative:
+            # Mirroring client: remember the request for the host and report "not placed".
+            self.pending_place = (x, y)
+            return False
         if self.state != 'ball_in_hand':
             return False
         left, top, right, bottom = self.bounds
@@ -480,7 +655,13 @@ class BilliardsMotion:
 
     def _poses(self):
         result = []
-        for body, (w, h) in zip(self.icons, self.sizes):
+        for index, body in enumerate(self.icons):
+            if index < len(self.sizes):
+                w, h = self.sizes[index]
+            else:
+                # A forced ball count can exceed the icons on this desktop: spare balls
+                # borrow a square as wide as the tile instead of disappearing from the rack.
+                w = h = self.tile
             ratio = self.tile / max(w, h)
             result.append((body.x, body.y, max(1, round(w * ratio * (1 + body.impact * .64))),
                            max(1, round(h * ratio * (1 - body.impact))), body.angle, 0, 0.))
