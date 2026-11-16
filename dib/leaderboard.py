@@ -10,7 +10,8 @@ import win32con
 import win32gui
 
 from . import card
-from .panel import ACCENT, BG, CARD, FONT, GOLD, MUTED, TEXT, configure_styles
+from .i18n import t
+from .panel import ACCENT, BG, CARD, GOLD, MUTED, TEXT, configure_styles, ui_font
 from .rank import RankError
 
 
@@ -19,9 +20,9 @@ def round_details(entry):
         return ''
     parts = []
     if 'icon_count' in entry:
-        parts.append(f'{entry["icon_count"]} 个图标')
+        parts.append(t('leaderboard.round.icons', count=entry['icon_count']))
     if 'shots' in entry:
-        parts.append(f'{entry["shots"]} 杆')
+        parts.append(t('leaderboard.round.shots', count=entry['shots']))
     return ' · '.join(parts)
 
 
@@ -31,7 +32,7 @@ class LeaderboardDialog:
         self.inbox = queue.SimpleQueue()
         self.busy = False
         self.top = top = tk.Toplevel(root)
-        top.title('全球排行榜')
+        top.title(t('leaderboard.title'))
         top.configure(bg=BG)
         top.transient(root)
         top.iconbitmap(str(card.LOGO.with_suffix('.ico')))
@@ -41,20 +42,22 @@ class LeaderboardDialog:
         shell.pack(fill='both', expand=True)
         header = tk.Frame(shell, bg=BG)
         header.pack(fill='x')
-        tk.Label(header, text='全球排行榜', font=(FONT, 19, 'bold'), bg=BG, fg=TEXT).pack(side='left')
+        self.title_label = tk.Label(header, text=t('leaderboard.title'), font=ui_font(19, bold=True),
+                                    bg=BG, fg=TEXT)
+        self.title_label.pack(side='left')
         tk.Label(header, text='TOP 50', font=('Segoe UI', 10, 'bold'), bg=CARD, fg=ACCENT,
                  padx=12, pady=5).pack(side='right')
-        tk.Label(shell, text='个人最佳 · 平均每颗用时', font=(FONT, 9),
-                 bg=BG, fg=MUTED).pack(anchor='w', pady=(8, 20))
+        self.subtitle = tk.Label(shell, text=t('leaderboard.subtitle'), font=ui_font(9), bg=BG, fg=MUTED)
+        self.subtitle.pack(anchor='w', pady=(8, 20))
 
         self.status = tk.StringVar(top)
-        self.status_label = tk.Label(shell, textvariable=self.status, font=(FONT, 8), bg=BG, fg=MUTED,
+        self.status_label = tk.Label(shell, textvariable=self.status, font=ui_font(8), bg=BG, fg=MUTED,
                                      anchor='w')
         self.status_label.pack(side='bottom', fill='x', pady=(12, 0))
         self.status_label.bind('<ButtonRelease-1>', self._retry)
         self.failed = False
         self.me = None
-        self.own_message = '正在查询…'
+        self.own_key = 'leaderboard.loading'
         self.own_canvas = tk.Canvas(shell, bg=CARD, bd=0, highlightthickness=0, height=104)
         self.own_canvas.pack(side='bottom', fill='x', pady=(20, 0))
         self.column_header = tk.Canvas(shell, bg=BG, bd=0, highlightthickness=0, height=42)
@@ -105,8 +108,10 @@ class LeaderboardDialog:
         width = canvas.winfo_width()
         columns = (18, width * .43, width * .62, width - 18)
         self.column_header.delete('all')
-        for x, text, anchor in zip(columns, ('名次', '图标数', '击球数', '平均用时 / 秒'), ('w', 'center', 'center', 'e')):
-            self.column_header.create_text(x, 20, text=text, anchor=anchor, font=(FONT, 9), fill=MUTED)
+        headers = (t('leaderboard.column.rank'), t('leaderboard.column.icons'),
+                   t('leaderboard.column.shots'), t('leaderboard.column.average'))
+        for x, text, anchor in zip(columns, headers, ('w', 'center', 'center', 'e')):
+            self.column_header.create_text(x, 20, text=text, anchor=anchor, font=ui_font(9), fill=MUTED)
         h = self.row_height
         colors = {1: GOLD, 2: '#bbcbd5', 3: '#d5ae93'}
         for index, entry in enumerate(self.entries):
@@ -122,7 +127,7 @@ class LeaderboardDialog:
             canvas.create_text(columns[0], cy, text=f'{entry["rank"]:02d}', anchor='w',
                                font=('Segoe UI', 17, 'bold'), fill=colour)
             if mine:
-                canvas.create_text(72, cy, text='我', anchor='w', font=(FONT, 9), fill=ACCENT)
+                canvas.create_text(72, cy, text=t('leaderboard.me'), anchor='w', font=ui_font(9), fill=ACCENT)
             for x, key in zip(columns[1:3], ('icon_count', 'shots')):
                 canvas.create_text(x, cy, text=str(entry.get(key, '—')), font=('Segoe UI', 12), fill=MUTED)
             canvas.create_text(columns[3], cy, text=f'{entry["avg_ms"] / 1000:.3f}', anchor='e',
@@ -130,16 +135,16 @@ class LeaderboardDialog:
         canvas.configure(scrollregion=(0, 0, width, max(1, len(self.entries) * h)))
         own = self.own_canvas
         own.delete('all')
-        own.create_text(columns[0], 24, text='我的最佳', anchor='w', font=(FONT, 9), fill=MUTED)
+        own.create_text(columns[0], 24, text=t('leaderboard.own_best'), anchor='w', font=ui_font(9), fill=MUTED)
         if self.me:
-            own.create_text(columns[0], 67, text=f'第 {self.me["rank"]:,} 名', anchor='w',
-                            font=(FONT, 12, 'bold'), fill=ACCENT)
+            own.create_text(columns[0], 67, text=t('leaderboard.own_rank', rank=f'{self.me["rank"]:,}'),
+                            anchor='w', font=ui_font(12, bold=True), fill=ACCENT)
             for x, key in zip(columns[1:3], ('icon_count', 'shots')):
                 own.create_text(x, 67, text=str(self.me.get(key, '—')), font=('Segoe UI', 12), fill=MUTED)
             own.create_text(columns[3], 67, text=f'{self.me["avg_ms"] / 1000:.3f}', anchor='e',
                             font=('Segoe UI', 17, 'bold'), fill=ACCENT)
         else:
-            own.create_text(columns[0], 67, text=self.own_message, anchor='w', font=(FONT, 11), fill=MUTED)
+            own.create_text(columns[0], 67, text=t(self.own_key), anchor='w', font=ui_font(11), fill=MUTED)
 
     def _wheel(self, event):
         if event.delta:
@@ -165,8 +170,38 @@ class LeaderboardDialog:
         self.busy = True
         self.failed = False
         self.status_label.configure(cursor='arrow', fg=MUTED)
-        self.status.set('正在获取最新排名…')
+        self._set_status('refreshing')
         threading.Thread(target=self._load, name='Billiards-leaderboard', daemon=True).start()
+
+    def _set_status(self, kind, **info):
+        """Render the status line from its parts, so a language switch can redraw it."""
+        self.status_state = (kind, info)
+        self._apply_status()
+
+    def _apply_status(self):
+        kind, info = getattr(self, 'status_state', ('', {}))
+        if kind == 'refreshing':
+            text = t('leaderboard.refreshing')
+        elif kind == 'updated':
+            text = ((t('leaderboard.empty_prefix') if info['empty'] else '')
+                    + t('leaderboard.updated', stamp=info['stamp']))
+        elif kind == 'error':
+            text = t(info['key']) + t('leaderboard.retry_hint')
+        else:
+            text = ''
+        self.status.set(text)
+
+    def retranslate(self):
+        """Re-read every label from the active catalog and redraw the visible rows."""
+        if not self.alive():
+            return
+        configure_styles(self.top)
+        self.top.title(t('leaderboard.title'))
+        self.title_label.configure(text=t('leaderboard.title'), font=ui_font(19, bold=True))
+        self.subtitle.configure(text=t('leaderboard.subtitle'), font=ui_font(9))
+        self.status_label.configure(font=ui_font(8))
+        self._apply_status()
+        self._draw_rows()
 
     def _load(self):
         try:
@@ -188,18 +223,19 @@ class LeaderboardDialog:
             if kind == 'ok':
                 self.entries = data['entries']
                 self.me = data['me']
-                self.own_message = '暂无上榜成绩'
+                self.own_key = 'leaderboard.empty'
                 self._draw_rows()
                 self.canvas.yview_moveto(0)
                 stamp = datetime.fromisoformat(data['generated_at'].replace('Z', '+00:00')).astimezone()
-                self.status.set(('榜单暂无成绩 · ' if not data['entries'] else '') + f'更新于 {stamp:%m-%d %H:%M:%S}')
+                self._set_status('updated', stamp=f'{stamp:%m-%d %H:%M:%S}', empty=not data['entries'])
             else:
-                message = ('排名服务尚未支持新榜单' if data.status == 404 else
-                           '刷新过于频繁，请稍后重试' if data.code == 'rate_limited' else '暂时无法获取排名，请重试')
+                key = ('leaderboard.error.unsupported' if data.status == 404 else
+                       'leaderboard.error.rate_limited' if data.code == 'rate_limited'
+                       else 'leaderboard.error.generic')
                 self.failed = True
                 self.status_label.configure(cursor='hand2', fg=ACCENT)
-                self.status.set(message + ' · 点击重试')
+                self._set_status('error', key=key)
                 if not self.entries:
-                    self.own_message = '暂时无法查询'
+                    self.own_key = 'leaderboard.unavailable'
                     self._draw_rows()
         self.poll_id = self.top.after(100, self._poll)

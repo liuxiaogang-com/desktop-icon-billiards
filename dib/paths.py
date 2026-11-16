@@ -5,6 +5,8 @@ import ctypes
 import os
 from pathlib import Path
 
+from .i18n import t
+
 # Deliberately distinct from the sibling DesktopBounce runtime directory.
 RUNTIME_DIRECTORY_NAME = 'DesktopIconBilliards'
 
@@ -48,7 +50,7 @@ def runtime_directory() -> Path:
 
     Raises the last ``OSError`` only when no candidate location can be created and written to.
     """
-    last_error = OSError('找不到可写入的运行目录（临时目录和用户目录都不可用）')
+    last_error = OSError(t('paths.error.no_directory'))
     for base in _candidate_bases():
         directory = base / RUNTIME_DIRECTORY_NAME
         try:

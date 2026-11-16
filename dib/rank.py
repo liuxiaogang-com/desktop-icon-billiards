@@ -28,6 +28,7 @@ import uuid
 from pathlib import Path
 
 from .balls import MAX_BALLS, MIN_BALLS, fill_sources  # noqa: F401  (re-exported for callers and tests)
+from .i18n import t
 
 # Every table is trimmed to MAX_BALLS, so in practice all rounds are ranked; the check stays as a guard.
 MAX_RANKED_BALLS = MAX_BALLS
@@ -37,17 +38,14 @@ REQUEST_TIMEOUT = 8
 START_REFRESH_SECONDS = 30 * 60
 HASH_SALT = b'dib-rank-v1|'
 
-ERROR_TEXT = {
-    'network': '排名服务暂时连接不上，本局成绩未提交',
-    'bad_response': '排名服务返回异常，本局成绩未提交',
-    'rate_limited': '请求过于频繁，本局成绩未提交',
-    'busy': '排名服务繁忙，本局成绩未提交',
-    'stale_timestamp': '系统时间不准，请校准后重试',
-    'too_fast': '成绩校验未通过，本局不计入排名',
-    'round_invalid': '成绩校验未通过，本局不计入排名',
-    'no_round': '未能连接排名服务，本局不计入排名',
-    'implausible_time': '成绩校验未通过，本局不计入排名',
-}
+# Error codes the ranking server can answer with; each has a ``rank.error.<code>`` catalog entry.
+ERROR_CODES = ('network', 'bad_response', 'rate_limited', 'busy', 'stale_timestamp',
+               'too_fast', 'round_invalid', 'no_round', 'implausible_time')
+
+
+def error_text(code):
+    """The player-facing text for a ranking error code."""
+    return t(f'rank.error.{code}' if code in ERROR_CODES else 'rank.error.unknown')
 
 
 def is_rankable(ball_count):
@@ -307,19 +305,19 @@ class RankController:
         """Up to three short lines for the summary label under the stats."""
         count = table.icon_count
         if table.state == 'finished':
-            lines = [f'本局平均 {average_seconds(table.play_ms, count):.2f} 秒/颗（{count} 颗）']
+            lines = [t('rank.lines.average', average=f'{average_seconds(table.play_ms, count):.2f}', balls=count)]
             if self.enabled:
                 lines.extend(self.status or [''])
             elif self.available:
-                lines.append('开启「全球排名」可与其他玩家比较')
+                lines.append(t('rank.lines.enable_hint'))
             return lines
         if not self.enabled:
             return []
         if self.skip:
-            return ['本局开始后才开启排名，下一局起计入']
+            return [t('rank.lines.skip')]
         if not is_rankable(count):
-            return [f'图标超过 {MAX_RANKED_BALLS} 个，本局不计入排名']
-        return ['全球排名已开启 · 清台后提交成绩']
+            return [t('rank.lines.too_many', max=MAX_RANKED_BALLS)]
+        return [t('rank.lines.ready')]
 
     def view(self, table):
         """The ranking outcome of the current round as plain data for the result dialog.
@@ -333,9 +331,9 @@ class RankController:
         if not self.enabled:
             return {'phase': 'off'}
         if self.skip:
-            return {'phase': 'skipped', 'message': '本局开始后才开启排名，下一局起计入。'}
+            return {'phase': 'skipped', 'message': t('rank.view.skip')}
         if not is_rankable(table.icon_count):
-            return {'phase': 'skipped', 'message': f'图标超过 {MAX_RANKED_BALLS} 个，本局不计入排名。'}
+            return {'phase': 'skipped', 'message': t('rank.view.too_many', max=MAX_RANKED_BALLS)}
         if self.outcome is None:
             return {'phase': 'pending'}
         kind, payload = self.outcome
@@ -347,15 +345,15 @@ class RankController:
                     'rank': int(this['rank']),
                     'percentile': float(this['percentile']),
                     'best_rank': int(best['rank']),
-                    'rank_text': f'第 {this["rank"]:,} 名',
-                    'percentile_text': f'超过 {this["percentile"]}% 的玩家',
-                    'best_text': ('新的个人最佳 · ' if payload.get('is_personal_best') else '')
-                                 + f'个人最佳第 {best["rank"]:,} 名',
+                    'rank_text': t('rank.text.rank', rank=f'{this["rank"]:,}'),
+                    'percentile_text': t('rank.text.percentile', percentile=this['percentile']),
+                    'best_text': (t('rank.text.new_best') if payload.get('is_personal_best') else '')
+                                 + t('rank.text.best', rank=f'{best["rank"]:,}'),
                     'new_best': bool(payload.get('is_personal_best')),
                 }
             except (KeyError, TypeError, ValueError):
                 payload = 'bad_response'
-        return {'phase': 'error', 'message': ERROR_TEXT.get(payload, '排名服务暂不可用，本局成绩未提交')}
+        return {'phase': 'error', 'message': error_text(payload)}
 
     def _begin(self, table):
         self.serial = table.round_serial
@@ -388,10 +386,10 @@ class RankController:
     def _finish(self, table):
         self.submitted = self.serial
         if self.round_id is None:
-            self.status = [ERROR_TEXT['no_round']]
+            self.status = [error_text('no_round')]
             self.outcome = ('error', 'no_round')
             return
-        self.status = ['正在提交成绩…']
+        self.status = [t('rank.status.submitting')]
         serial, round_id = self.serial, self.round_id
         total_ms, count, shots = table.play_ms, table.icon_count, table.shots
 
@@ -420,7 +418,7 @@ class RankController:
                 pass  # reported only if the round finishes without an id
             elif event[1] == self.serial:
                 if kind == 'failed':
-                    self.status = [ERROR_TEXT.get(event[2], '排名服务暂不可用，本局成绩未提交')]
+                    self.status = [error_text(event[2])]
                     self.outcome = ('error', event[2])
                 else:
                     self.status = self._describe(event[2])
@@ -430,11 +428,11 @@ class RankController:
     def _describe(data):
         try:
             this, best = data['round'], data['best']
-            first = f'本局全球第 {this["rank"]:,} 名 · 超过 {this["percentile"]}% 的玩家'
-            prefix = '新的个人最佳 · ' if data.get('is_personal_best') else ''
-            second = f'{prefix}个人最佳第 {best["rank"]:,} 名'
+            first = t('rank.status.first', rank=f'{this["rank"]:,}', percentile=this['percentile'])
+            prefix = t('rank.text.new_best') if data.get('is_personal_best') else ''
+            second = t('rank.status.second', prefix=prefix, rank=f'{best["rank"]:,}')
         except (KeyError, TypeError, ValueError):
-            return [ERROR_TEXT['bad_response']]
+            return [error_text('bad_response')]
         return [first, second]
 
     # -- worker thread -----------------------------------------------------

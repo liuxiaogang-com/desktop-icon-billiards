@@ -14,7 +14,10 @@ import os
 import time
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFilter, ImageOps
+
+from . import fonts
+from .i18n import t
 
 WIDTH, HEIGHT = 1080, 1350
 SCALE = 2  # drawn at twice the size and shrunk back: Pillow shapes have no anti-aliasing
@@ -28,44 +31,29 @@ ACCENT = (105, 221, 179)
 ACCENT_LIGHT = (182, 251, 224)
 GOLD = (242, 202, 135)
 
-# (minimum percentile, title, colour): the first row whose minimum is reached wins.
+# (minimum percentile, catalog key, colour): the first row whose minimum is reached wins.
 TIERS = (
-    (99, '传奇球王', (242, 202, 135)),
-    (95, '桌面球王', (255, 170, 102)),
-    (85, '大师', (190, 154, 255)),
-    (65, '高手', (105, 221, 179)),
-    (40, '熟手', (140, 200, 255)),
-    (0, '新秀', (166, 186, 180)),
+    (99, 'card.tier.legend', (242, 202, 135)),
+    (95, 'card.tier.champion', (255, 170, 102)),
+    (85, 'card.tier.master', (190, 154, 255)),
+    (65, 'card.tier.expert', (105, 221, 179)),
+    (40, 'card.tier.skilled', (140, 200, 255)),
+    (0, 'card.tier.rookie', (166, 186, 180)),
 )
 
-FONT_DIRECTORY = Path(os.environ.get('SystemRoot', 'C:/Windows')) / 'Fonts'
 LOGO = Path(__file__).resolve().parent.parent / 'assets' / 'desktop-icon-billiards.png'
+
+# Labels follow the interface language; digits keep a designed numeral face.
+label_font = fonts.text
+number_font = fonts.numerals
 
 
 def tier_for(percentile):
     """The ``(title, colour)`` a player's global percentile earns."""
-    for minimum, title, colour in TIERS:
+    for minimum, key, colour in TIERS:
         if percentile >= minimum:
-            return title, colour
-    return TIERS[-1][1], TIERS[-1][2]
-
-
-def _font(names, size):
-    for name in names:
-        try:
-            return ImageFont.truetype(str(FONT_DIRECTORY / name), size)
-        except OSError:
-            continue
-    return ImageFont.load_default(size)
-
-
-def cjk(size, bold=False):
-    return _font(('msyhbd.ttc',) if bold else ('msyh.ttc', 'msyhbd.ttc'), size)
-
-
-def numerals(size):
-    """Heavy numerals; Segoe UI Bold, falling back to the CJK face when it is missing."""
-    return _font(('segoeuib.ttf', 'arialbd.ttf', 'msyhbd.ttc'), size)
+            return t(key), colour
+    return t(TIERS[-1][1]), TIERS[-1][2]
 
 
 def _gradient(size, top, bottom):
@@ -99,16 +87,32 @@ def _rounded(draw, box, radius, fill=None, outline=None, width=1):
     draw.rounded_rectangle(box, radius=radius, fill=fill, outline=outline, width=width)
 
 
+def around(template, name, **values):
+    """Split ``template`` around its ``{name}`` placeholder: ``(before, middle, after)``.
+
+    A unit that a language does not have (English writes "35", Chinese "35 颗") therefore
+    lives inside the translation instead of forcing an empty string, which .po files read
+    as "not translated yet".
+    """
+    marker = '{' + name + '}'
+    before, found, after = template.partition(marker)
+    if not found:
+        raise ValueError(f'missing {{{name}}} in {template!r}')
+    return before, str(values[name]), after
+
+
 def _hero_rank(draw, canvas_width, y, rank, s, colour):
-    """``第 1,204 名``: the number huge, the particles small, all sharing one baseline."""
+    """``第 1,204 名`` / ``#1,204``: the number huge, the particles small, on one baseline."""
     number = f'{rank:,}'
-    big = _fit_font(draw, number, numerals, 230 * s, 640 * s)
-    small = cjk(64 * s, bold=True)
+    big = _fit_font(draw, number, number_font, 230 * s, 640 * s)
+    small = label_font(64 * s, bold=True)
+    before, middle, after = around(t('card.hero.rank'), 'rank', rank=number)
+    words = [(text, font) for text, font in ((before, small), (middle, big), (after, small)) if text]
     gap = 14 * s
-    widths = (_text_width(draw, '第', small), _text_width(draw, number, big), _text_width(draw, '名', small))
-    left = (canvas_width - sum(widths) - 2 * gap) / 2
+    widths = [_text_width(draw, text, font) for text, font in words]
+    left = (canvas_width - sum(widths) - gap * (len(words) - 1)) / 2
     baseline = y + 220 * s
-    for text, font, width in zip(('第', number, '名'), (small, big, small), widths):
+    for (text, font), width in zip(words, widths):
         draw.text((left, baseline), text, font=font, fill=colour, anchor='ls')
         left += width + gap
     return baseline
@@ -147,15 +151,16 @@ def render_card(view, *, when=None, credit='', site=''):
         canvas.alpha_composite(logo, (margin, 82 * s))
     except OSError:
         pass
-    draw.text((margin + 104 * s, 82 * s), '桌面图标台球', font=cjk(46 * s, bold=True), fill=TEXT)
-    draw.text((margin + 106 * s, 144 * s), '把桌面图标打成一局台球', font=cjk(24 * s), fill=MUTED)
+    draw.text((margin + 104 * s, 82 * s), t('product.name'), font=label_font(46 * s, bold=True), fill=TEXT)
+    draw.text((margin + 106 * s, 144 * s), t('product.tagline'), font=label_font(24 * s), fill=MUTED)
     when = when or time.localtime()
-    draw.text((width - margin, 92 * s), time.strftime('%Y.%m.%d', when), font=numerals(26 * s), fill=MUTED, anchor='ra')
+    stamp = time.strftime('%Y.%m.%d', when)
+    draw.text((width - margin, 92 * s), stamp, font=number_font(26 * s), fill=MUTED, anchor='ra')
 
     # -- hero ----------------------------------------------------------------------
     centre = width / 2
     if ranked:
-        badge_font = cjk(40 * s, bold=True)
+        badge_font = label_font(40 * s, bold=True)
         badge_width = _text_width(draw, tier, badge_font) + 96 * s
         box = (centre - badge_width / 2, 270 * s, centre + badge_width / 2, 348 * s)
         # Translucent shapes go on their own layer: drawing RGBA fills straight onto the canvas
@@ -164,11 +169,11 @@ def render_card(view, *, when=None, credit='', site=''):
         _rounded(ImageDraw.Draw(layer), box, 39 * s, fill=tier_colour + (46,))
         canvas.alpha_composite(layer)
         draw.text((centre, 309 * s), tier, font=badge_font, fill=tier_colour, anchor='mm')
-        draw.text((centre, 408 * s), '本局全球排名', font=cjk(30 * s), fill=MUTED, anchor='mm')
+        draw.text((centre, 408 * s), t('card.hero.caption'), font=label_font(30 * s), fill=MUTED, anchor='mm')
         _hero_rank(draw, width, 420 * s, rank['rank'], s, tier_colour)
         percentage = f'{rank["percentile"]:.2f}'.rstrip('0').rstrip('.')
-        parts = (('超过  ', cjk(32 * s)), (f'{percentage}%', numerals(110 * s)),
-                 ('  的全球玩家', cjk(32 * s)))
+        parts = ((t('card.percentile.prefix'), label_font(32 * s)), (f'{percentage}%', number_font(110 * s)),
+                 (t('card.percentile.suffix'), label_font(32 * s)))
         lengths = [_text_width(draw, text, font) for text, font in parts]
         x = (width - sum(lengths)) / 2
         for (text, font), length in zip(parts, lengths):
@@ -185,41 +190,48 @@ def render_card(view, *, when=None, credit='', site=''):
             _rounded(draw, (bar_left, bar_top, bar_left + filled, bar_bottom),
                      min(7 * s, filled / 2), fill=ACCENT_LIGHT)
     else:
-        draw.text((centre, 300 * s), '平均每颗用时', font=cjk(34 * s), fill=MUTED, anchor='mm')
+        draw.text((centre, 300 * s), t('card.average.caption'), font=label_font(34 * s), fill=MUTED, anchor='mm')
         value = view['average']
-        big = _fit_font(draw, value, numerals, 250 * s, 680 * s)
+        big = _fit_font(draw, value, number_font, 250 * s, 680 * s)
         draw.text((centre - 30 * s, 520 * s), value, font=big, fill=ACCENT, anchor='ms')
-        draw.text((centre + _text_width(draw, value, big) / 2 - 10 * s, 520 * s), '秒', font=cjk(64 * s, bold=True),
-                  fill=ACCENT, anchor='ls')
-        message = {'pending': '正在提交成绩，稍后显示全球排名', 'off': '开启「全球排名」，看看你超过了多少玩家'}.get(
+        draw.text((centre + _text_width(draw, value, big) / 2 - 10 * s, 520 * s), t('card.average.unit'),
+                  font=label_font(64 * s, bold=True), fill=ACCENT, anchor='ls')
+        message = {'pending': t('card.message.pending'), 'off': t('card.message.off')}.get(
             rank.get('phase'), rank.get('message') or '')
         if message:
-            font = cjk(30 * s)
+            font = label_font(30 * s)
             pill_width = min(width - 2 * margin, _text_width(draw, message, font) + 80 * s)
             _rounded(draw, (centre - pill_width / 2, 620 * s, centre + pill_width / 2, 690 * s), 35 * s,
                      fill=(31, 55, 51, 255), outline=(60, 100, 92, 255), width=2 * s)
             draw.text((centre, 655 * s), message, font=font, fill=MUTED, anchor='mm')
 
     # -- the numbers ---------------------------------------------------------------
-    tiles = (('总用时', view['time'], ''), ('平均每颗', view['average'], '秒'),
-             ('图标', view['balls'], '颗'), ('击球', view['shots'], '杆'))
+    # Each tile is a label plus a template whose {value} slot carries the number and whose
+    # remainder is the unit, so a language without a unit word simply omits it.
+    tiles = ((t('card.tile.time'), view['time'], None),
+             (t('card.tile.average'), view['average'], 'card.value.average'),
+             (t('card.tile.icons'), view['balls'], 'card.value.icons'),
+             (t('card.tile.shots'), view['shots'], 'card.value.shots'))
     tile_width = (width - 2 * margin) / 4
     draw.line((margin, 940 * s, width - margin, 940 * s), fill=(48, 84, 76), width=2 * s)
-    for index, (label, value, unit) in enumerate(tiles):
+    for index, (label, value, template_key) in enumerate(tiles):
         x = margin + index * tile_width
-        draw.text((x, 986 * s), label, font=cjk(27 * s), fill=MUTED)
-        font = _fit_font(draw, value, numerals, 42 * s, tile_width - 42 * s)
+        draw.text((x, 986 * s), label, font=label_font(27 * s), fill=MUTED)
+        font = _fit_font(draw, value, number_font, 42 * s, tile_width - 42 * s)
         draw.text((x, 1080 * s), value, font=font, fill=TEXT, anchor='ls')
+        unit = around(t(template_key), 'value', value=value)[2] if template_key else ''
         if unit:
-            draw.text((x + 8 * s + _text_width(draw, value, font), 1080 * s), unit, font=cjk(24 * s),
+            draw.text((x + _text_width(draw, value, font), 1080 * s), unit, font=label_font(24 * s),
                       fill=MUTED, anchor='ls')
 
     if ranked:
-        text = f'个人最佳  {rank["best_rank"]:,} 名'
-        draw.text((margin, 1186 * s), text, font=_fit_font(draw, text, cjk, 34 * s, 690 * s), fill=ACCENT_LIGHT, anchor='lm')
+        text = t('card.best', rank=f'{rank["best_rank"]:,}')
+        best_font = _fit_font(draw, text, label_font, 34 * s, 690 * s)
+        draw.text((margin, 1186 * s), text, font=best_font, fill=ACCENT_LIGHT, anchor='lm')
         if rank.get('new_best'):
-            font = cjk(30 * s, bold=True)
-            pill = _text_width(draw, '新纪录', font) + 56 * s
+            font = label_font(30 * s, bold=True)
+            best_label = t('card.new_best')
+            pill = _text_width(draw, best_label, font) + 56 * s
             x1 = width - margin
             stem_x = (x1 - pill) / s - 30
             draw.line(((stem_x + 9) * s, 1205 * s, (stem_x - 5) * s, 1168 * s), fill=GOLD, width=2 * s)
@@ -231,14 +243,14 @@ def render_card(view, *, when=None, credit='', site=''):
                                   ((x + side * 14) * s, (y - 17) * s), ((x + side * 4) * s, (y - 11) * s)),
                                  fill=GOLD)
             _rounded(draw, (x1 - pill, 1156 * s, x1, 1216 * s), 30 * s, fill=GOLD + (255,))
-            draw.text((x1 - pill / 2, 1186 * s), '新纪录', font=font, fill=(40, 28, 8), anchor='mm')
+            draw.text((x1 - pill / 2, 1186 * s), best_label, font=font, fill=(40, 28, 8), anchor='mm')
 
     # -- footer: where the game comes from ----------------------------------------------
     draw.line((margin, 1262 * s, width - margin, 1262 * s), fill=(48, 84, 76, 255), width=2 * s)
     if credit:
-        draw.text((margin, 1296 * s), credit, font=numerals(28 * s), fill=ACCENT, anchor='lm')
+        draw.text((margin, 1296 * s), credit, font=number_font(28 * s), fill=ACCENT, anchor='lm')
     if site:
-        draw.text((width - margin, 1296 * s), site, font=cjk(24 * s), fill=MUTED, anchor='rm')
+        draw.text((width - margin, 1296 * s), site, font=label_font(24 * s), fill=MUTED, anchor='rm')
 
     return canvas.convert('RGB').resize((WIDTH, HEIGHT), Image.Resampling.LANCZOS)
 
@@ -255,7 +267,7 @@ def save_card(image, directory=None, when=None):
     """Write the card as a PNG and return its path."""
     directory = Path(directory) if directory else pictures_directory()
     directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f'桌面图标台球-成绩-{time.strftime("%Y%m%d-%H%M%S", when or time.localtime())}.png'
+    path = directory / f'{t("card.file_prefix")}{time.strftime("%Y%m%d-%H%M%S", when or time.localtime())}.png'
     image.save(path, 'PNG', optimize=True)
     return path
 

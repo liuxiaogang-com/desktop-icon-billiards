@@ -31,7 +31,7 @@ class ToolbarTests(unittest.TestCase):
         self.assertEqual(hotkeys.pending.get_nowait(), config.HOTKEY_ID)
         self.assertTrue(hotkeys.pending.empty())
 
-    def test_all_actions_are_visible_in_one_borderless_row(self):
+    def test_all_actions_are_visible_in_a_two_row_toolbar(self):
         calls = []
         names = ('restart', 'toggle_guide', 'toggle_rank', 'leaderboard', 'toggle_felt',
                  'check_updates', 'donate', 'quit', 'open_credit')
@@ -39,19 +39,26 @@ class ToolbarTests(unittest.TestCase):
         panel = MainPanel(self.root, config.VERSION, callbacks, config.CREDIT)
         self.root.update()
         self.assertTrue(self.root.overrideredirect())
-        self.assertEqual(set(panel.pills), {'restart', 'guide', 'rank', 'leaderboard', 'felt', 'update', 'donate', 'quit'})
-        self.assertLess(panel.pills['rank'].winfo_x(), panel.pills['leaderboard'].winfo_x())
-        self.assertLess(panel.pills['leaderboard'].winfo_x(), panel.pills['felt'].winfo_x())
-        credit = next(widget for widget in panel.shell.winfo_children()
+        self.assertEqual(set(panel.pills), {'restart', 'guide', 'rank', 'leaderboard', 'felt', 'white',
+                                            'update', 'donate', 'quit'})
+        self.assertNotIn('hide', panel.pills)
+        # The first row holds the functions and the author entry, the second the counters and actions.
+        functions = {panel.pills[key].winfo_rooty()
+                     for key in ('guide', 'felt', 'white', 'rank', 'leaderboard', 'update', 'donate')}
+        self.assertEqual(len(functions), 1, 'the function buttons share one row')
+        actions = {panel.pills['restart'].winfo_rooty(), panel.pills['quit'].winfo_rooty()}
+        self.assertEqual(len(actions), 1, 'restart and quit share one row')
+        self.assertLess(min(functions), min(actions), 'functions sit above the actions')
+        credit = next(widget for widget in panel.functions.winfo_children()
                       if isinstance(widget, tk.Label) and widget.cget('text') == config.CREDIT)
-        self.assertGreaterEqual(panel.pills['quit'].winfo_x(), credit.winfo_x() + credit.winfo_width())
-        positions = [pill.winfo_rooty() for pill in panel.pills.values()]
-        self.assertLessEqual(max(positions) - min(positions), 2)
+        self.assertLess(credit.winfo_rooty(), min(actions), 'the author entry stays on the top row')
+        self.assertLess(panel.pills['rank'].winfo_x(), panel.pills['leaderboard'].winfo_x())
         for pill in panel.pills.values():
             self.assertTrue(pill.winfo_ismapped())
             pill._release(SimpleNamespace(x=1, y=1))
-        self.assertNotIn('hide', panel.pills)
-        self.assertEqual(calls, list(names[:-1]))
+        self.assertEqual(set(calls), {'toggle_guide', 'toggle_felt', 'toggle_rank', 'leaderboard',
+                                      'check_updates', 'donate', 'quit', 'restart'})
+        self.assertEqual(len(calls), 8, 'every enabled pill fires once')
 
 
 if __name__ == '__main__':

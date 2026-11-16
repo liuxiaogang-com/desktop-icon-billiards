@@ -9,19 +9,20 @@ import win32api
 import win32con
 
 from .art import white_art
-from .panel import ACCENT, BG, CARD, FONT, MUTED, TEXT, Pill
+from .i18n import t
+from .panel import ACCENT, BG, CARD, MUTED, TEXT, Pill, ui_font
 
 
 def read_source(path):
     """Decode and orient once, with a bounded editing resolution."""
     path = Path(path)
     if path.stat().st_size > 20 * 1024 * 1024:
-        raise ValueError('请选择小于 20 MB 的图片。')
+        raise ValueError(t('white_ball.error.too_large'))
     with Image.open(path) as source:
         if source.format not in ('JPEG', 'PNG', 'WEBP'):
-            raise ValueError('请选择 JPG、PNG 或 WebP 图片。')
+            raise ValueError(t('white_ball.error.format'))
         if source.width * source.height > 25_000_000:
-            raise ValueError('图片尺寸过大，请缩小到 2500 万像素以内。')
+            raise ValueError(t('white_ball.error.pixels'))
         source = ImageOps.exif_transpose(source)
         source.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
         rgba = source.convert('RGBA')
@@ -71,7 +72,7 @@ class CropDialog:
         self.pending = None
         self.window = dialog = tk.Toplevel(parent)
         dialog.withdraw()
-        dialog.title('裁切白球图片')
+        dialog.title(t('white_ball.crop_title'))
         dialog.configure(bg=BG)
         dialog.transient(parent)
         dialog.resizable(False, False)
@@ -81,7 +82,7 @@ class CropDialog:
         self.side = max(96, min(320, right - left - 80, bottom - top - 230))
         body = tk.Frame(dialog, bg=BG, padx=20, pady=16)
         body.pack()
-        tk.Label(body, text='拖动图片调整位置 · 滚轮或滑块缩放', font=(FONT, 9),
+        tk.Label(body, text=t('white_ball.crop_hint'), font=ui_font(9),
                  bg=BG, fg=MUTED).pack(pady=(0, 12))
         self.canvas = tk.Canvas(body, width=self.side, height=self.side, bg=CARD,
                                 highlightthickness=0, cursor='fleur')
@@ -96,12 +97,13 @@ class CropDialog:
                                highlightthickness=0, activebackground=ACCENT, showvalue=False)
         self.slider.set(1)
         self.slider.pack(fill='x', pady=(8, 0))
-        self.zoom_label = tk.Label(body, text='100%', font=(FONT, 9), bg=BG, fg=MUTED)
+        self.zoom_label = tk.Label(body, text='100%', font=ui_font(9), bg=BG, fg=MUTED)
         self.zoom_label.pack()
         actions = tk.Frame(body, bg=BG)
         actions.pack(fill='x', pady=(12, 0))
-        Pill(actions, '取消', self.close, 'soft', padx=16, pady=8).pack(side='left')
-        Pill(actions, '使用图片', self.confirm, 'primary', bold=True, padx=16, pady=8).pack(side='right')
+        Pill(actions, t('white_ball.cancel'), self.close, 'soft', padx=16, pady=8).pack(side='left')
+        Pill(actions, t('white_ball.apply'), self.confirm, 'primary', bold=True,
+             padx=16, pady=8).pack(side='right')
         dialog.bind('<Escape>', lambda event: self.close())
         dialog.protocol('WM_DELETE_WINDOW', self.close)
         self.render()
@@ -156,7 +158,8 @@ class CropDialog:
         try:
             self.on_apply(crop_texture(self.source, self.zoom, self.center))
         except OSError as error:
-            messagebox.showwarning('白球外观', f'保存失败，请重试。\n\n{error}', parent=self.window)
+            messagebox.showwarning(t('white_ball.title'), t('white_ball.error.save_failed', error=error),
+                                   parent=self.window)
             return
         self.close()
 
@@ -174,26 +177,27 @@ class WhiteBallDialog:
         self.texture = texture
         self.on_change = on_change
         self.window = dialog = tk.Toplevel(root)
-        dialog.title('白球外观')
+        dialog.title(t('white_ball.title'))
         dialog.configure(bg=BG)
         dialog.resizable(False, False)
         # A transient child would disappear when the stealth toolbar withdraws.
         body = tk.Frame(dialog, bg=BG, padx=24, pady=20)
         body.pack(fill='both', expand=True)
-        tk.Label(body, text='白球外观', font=(FONT, 14, 'bold'), fg=TEXT, bg=BG).pack()
-        tk.Label(body, text='选图后可拖动、缩放，调整圆形裁切',
-                 font=(FONT, 9), fg=MUTED, bg=BG).pack(anchor='w', pady=(5, 14))
+        tk.Label(body, text=t('white_ball.title'), font=ui_font(14, bold=True), fg=TEXT, bg=BG).pack()
+        tk.Label(body, text=t('white_ball.intro'),
+                 font=ui_font(9), fg=MUTED, bg=BG).pack(anchor='w', pady=(5, 14))
         self.preview = tk.Label(body, bg=CARD, padx=70, pady=18)
         self.preview.pack(fill='x')
-        self.status = tk.Label(body, font=(FONT, 9), fg=ACCENT, bg=BG)
+        self.status = tk.Label(body, font=ui_font(9), fg=ACCENT, bg=BG)
         self.status.pack(pady=(10, 14))
         actions = tk.Frame(body, bg=BG)
         actions.pack(fill='x')
-        Pill(actions, '选择图片', self.choose, 'primary', bold=True, padx=16, pady=8).pack(side='left')
-        self.reset_button = Pill(actions, '恢复默认', self.reset, 'soft', padx=16, pady=8)
+        Pill(actions, t('white_ball.choose'), self.choose, 'primary', bold=True,
+             padx=16, pady=8).pack(side='left')
+        self.reset_button = Pill(actions, t('white_ball.reset'), self.reset, 'soft', padx=16, pady=8)
         self.reset_button.pack(side='right')
-        tk.Label(body, text='JPG / PNG / WebP · 仅保存在本机',
-                 font=(FONT, 8), fg=MUTED, bg=BG).pack(pady=(12, 0))
+        tk.Label(body, text=t('white_ball.hint'),
+                 font=ui_font(8), fg=MUTED, bg=BG).pack(pady=(12, 0))
         dialog.bind('<Escape>', lambda event: dialog.destroy())
         self.refresh()
         dialog.update_idletasks()
@@ -204,7 +208,8 @@ class WhiteBallDialog:
     def refresh(self):
         self.photo = ImageTk.PhotoImage(white_art(46, shaded=True, texture=self.texture), master=self.window)
         self.preview.configure(image=self.photo)
-        self.status.configure(text='自定义图片' if self.texture is not None else '默认白球')
+        self.status.configure(text=t('white_ball.status_custom') if self.texture is not None
+                              else t('white_ball.status_default'))
         self.reset_button.set(enabled=self.texture is not None or self.path.exists())
 
     def apply(self, texture):
@@ -214,17 +219,19 @@ class WhiteBallDialog:
         self.refresh()
 
     def choose(self):
-        path = filedialog.askopenfilename(parent=self.window, title='选择白球图片',
-                                         filetypes=[('图片', '*.jpg *.jpeg *.png *.webp')])
+        path = filedialog.askopenfilename(parent=self.window, title=t('white_ball.picker_title'),
+                                         filetypes=[(t('white_ball.picker_type'), '*.jpg *.jpeg *.png *.webp')])
         if not path:
             return
         try:
             CropDialog(self.window, read_source(path), self.apply)
         except (OSError, ValueError, Image.DecompressionBombError) as error:
-            messagebox.showwarning('白球外观', f'无法使用这张图片，原外观已保留。\n\n{error}', parent=self.window)
+            messagebox.showwarning(t('white_ball.title'), t('white_ball.error.load_failed', error=error),
+                                   parent=self.window)
 
     def reset(self):
         try:
             self.apply(None)
         except OSError as error:
-            messagebox.showwarning('白球外观', f'恢复默认失败，请重试。\n\n{error}', parent=self.window)
+            messagebox.showwarning(t('white_ball.title'), t('white_ball.error.reset_failed', error=error),
+                                   parent=self.window)
