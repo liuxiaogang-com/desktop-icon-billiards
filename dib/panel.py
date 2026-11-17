@@ -18,6 +18,7 @@ import win32gui
 from PIL import Image, ImageTk
 
 from . import card, diag, fonts, i18n
+from .display import work_area
 from .i18n import t
 from .release_notes import note_blocks
 
@@ -29,6 +30,8 @@ ACCENT = '#69ddb3'
 WARN = '#f2b880'
 GOLD = '#f2ca87'
 NUMBERS = 'Segoe UI Semibold'
+# Keep the wrapped bar a few pixels clear of the screen edge, so it never looks cut off.
+EDGE_GUTTER = 8
 
 
 def ui_font(size, bold=False):
@@ -268,10 +271,11 @@ class MainPanel:
         for group in self.groups:
             group.grid_forget()
         self.root.update_idletasks()
-        monitor = win32api.MonitorFromPoint((self.root.winfo_rootx(), self.root.winfo_rooty()),
-                                           win32con.MONITOR_DEFAULTTONEAREST)
-        left, _, right, _ = win32api.GetMonitorInfo(monitor)['Work']
-        available = max(1, right - left - 64)
+        left, _, right, _ = work_area(self.root.winfo_rootx(), self.root.winfo_rooty())
+        # The shell padding and the grip column grow with the monitor DPI, so the room the
+        # groups get is the work area minus everything they never fill.
+        chrome = 2 * int(self.shell.cget('padx')) + self.grip.winfo_reqwidth() + 12
+        available = max(1, right - left - chrome - EDGE_GUTTER)
         row = column = used = 0
         for group in self.groups:
             width = group.winfo_reqwidth() + 12
@@ -281,8 +285,20 @@ class MainPanel:
             column += 1
             used += width
 
+    def relayout(self):
+        """Refit the bar once every label is final, so the wrap uses the widths drawn.
+
+        Callers that replace state labels (``Guide on``, ``Rank on``, …) must call this
+        afterwards: those labels are wider than the neutral ones the bar was built with.
+        """
+        self._layout_groups()
+
     def retranslate(self):
-        """Re-read every label from the active catalog, re-font the widgets and refit the bar."""
+        """Re-read every label from the active catalog and re-font the widgets.
+
+        Laying the bar out is left to :meth:`relayout`, because the state labels are only
+        replaced afterwards, and those decide the final widths.
+        """
         configure_styles(self.root)
         for key, catalog_key in self.LABELS.items():
             pill = self.pills.get(key)
@@ -301,7 +317,6 @@ class MainPanel:
         self.remaining_title.set(t('panel.stats.remaining'))
         self.language.configure(font=ui_font(9))
         self.language.set(i18n.name())
-        self._layout_groups()
 
     def _draggable(self, widget):
         widget.bind('<ButtonPress-1>', self._drag_start)

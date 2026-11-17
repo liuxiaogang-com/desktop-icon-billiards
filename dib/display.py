@@ -6,6 +6,14 @@ from ctypes import wintypes
 from contextlib import contextmanager
 
 import win32api
+import win32con
+
+
+def work_area(x, y):
+    """The work rect of the monitor nearest a screen point, as ``(left, top, right, bottom)``."""
+    handle = win32api.MonitorFromPoint((x, y), win32con.MONITOR_DEFAULTTONEAREST)
+    left, top, right, bottom = win32api.GetMonitorInfo(handle)['Work']
+    return left, top, right, bottom
 
 
 @contextmanager

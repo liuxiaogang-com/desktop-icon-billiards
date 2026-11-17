@@ -19,7 +19,7 @@ from PIL import Image, ImageTk
 from tkinter import messagebox, ttk
 
 from . import config, diag, i18n
-from .display import dpi_context
+from .display import dpi_context, work_area
 from .hotkeys import Hotkeys
 from .i18n import t
 from .instance import acquire_instance, claim_instance_mutex, publish_version
@@ -111,6 +111,7 @@ class DesktopBilliardsApp:
         self.felt_enabled = bool(self.settings.get('felt', True))
         self.stealth_announced = False
         self.toolbar_hidden = False
+        self.toolbar_ready = False
         self.toolbar_eye = None
         self.toolbar_region = None
         self.toolbar_hover_since = None
@@ -163,6 +164,12 @@ class DesktopBilliardsApp:
         self.panel.set_look('rank', t('panel.toolbar.rank_on') if on else t('panel.toolbar.rank_off'),
                             'on' if on else 'off', enabled=True)
 
+    def fit_toolbar(self):
+        """Wrap the bar around its final labels, then keep it inside its monitor."""
+        self.panel.relayout()
+        if self.toolbar_ready:
+            self.place_window(keep=True)
+
     def refresh_buttons(self):
         self.refresh_rank_button()
         self.panel.set_look('guide', t('panel.toolbar.guide_on') if self.guide_enabled
@@ -170,6 +177,9 @@ class DesktopBilliardsApp:
                             'on' if self.guide_enabled else 'off')
         self.panel.set_look('felt', t('panel.toolbar.felt_on') if self.felt_enabled
                             else t('panel.toolbar.felt_off'))
+        # Every state label is set now, and they are wider than the neutral ones, so the
+        # wrap and the position are only correct once the bar has been refitted here.
+        self.fit_toolbar()
 
     def set_language(self, code):
         """Switch every open window to another bundled language, and remember the choice."""
@@ -184,21 +194,29 @@ class DesktopBilliardsApp:
         diag.log(f'language changed: {i18n.language()}')
 
     # -- toolbar position --------------------------------------------------
-    def place_window(self):
+    def place_window(self, keep=False):
+        """Keep the bar inside the work area of the monitor it belongs to.
+
+        The first run centres it above the taskbar; later runs restore the saved corner.
+        ``keep`` refits the bar where it already is, so a language change or a longer label
+        cannot push it off the edge or onto another monitor.
+        """
         root = self.root
         root.update_idletasks()
         width, height = root.winfo_reqwidth(), root.winfo_reqheight()
-        monitor = win32api.MonitorFromPoint((0, 0), win32con.MONITOR_DEFAULTTOPRIMARY)
-        left, top, right, bottom = win32api.GetMonitorInfo(monitor)['Work']
-        x, y = self.settings.get('bar_x'), self.settings.get('bar_y')
-        if not (isinstance(x, int) and isinstance(y, int)):
-            x, y = left + max(0, (right - left - width) // 2), top + 2
+        if keep:
+            x, y = root.winfo_rootx(), root.winfo_rooty()
         else:
-            monitor = win32api.MonitorFromPoint((x, y), win32con.MONITOR_DEFAULTTONEAREST)
+            monitor = win32api.MonitorFromPoint((0, 0), win32con.MONITOR_DEFAULTTOPRIMARY)
             left, top, right, bottom = win32api.GetMonitorInfo(monitor)['Work']
+            x, y = self.settings.get('bar_x'), self.settings.get('bar_y')
+            if not (isinstance(x, int) and isinstance(y, int)):
+                x, y = left + max(0, (right - left - width) // 2), top + 2
+        left, top, right, bottom = work_area(x, y)
         x = max(left, min(x, right - width))
         y = max(top, min(y, bottom - height))
         root.geometry(f'+{x}+{y}')
+        self.toolbar_ready = True
 
     def remember_position(self):
         if self.root.state() == 'normal':
@@ -267,6 +285,7 @@ class DesktopBilliardsApp:
         if self.closing or not self.panel.is_enabled('update'):
             return
         self.panel.set_look('update', t('panel.toolbar.update_checking'), enabled=False)
+        self.fit_toolbar()
 
         def fetch():
             try:
@@ -289,6 +308,7 @@ class DesktopBilliardsApp:
             self.root.after(100, self.finish_update_check, manual)
             return
         self.panel.set_look('update', t('panel.toolbar.update'), enabled=True)
+        self.fit_toolbar()
         if info:
             self.show_update(info)
         elif manual:
