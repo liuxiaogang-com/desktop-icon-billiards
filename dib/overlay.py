@@ -30,7 +30,7 @@ from .art import credit_layout, charge_art, cue_art, guide_art, pocket_art, pock
 from .art import round_actions_art, round_actions_layout
 from .balls import MAX_BALLS, ball_summary, fill_sources, priority_order
 from .display import dpi_context, monitors, window_dpi
-from .i18n import t
+from .i18n import language, t
 from .shell import ShellDesktop
 from .table import MIN_SHOT_CHARGE, BilliardsMotion
 from .wallpaper import primary_wallpaper
@@ -384,7 +384,9 @@ class BilliardsOverlay:
         self.primary_screen = primary[1]
         self.primary_work = primary[2]
         self.primary_bounds = map_rect(primary[2], (0, 0), parent_origin)
-        self.charge_font = fonts.text(max(12, round(14 * primary[3] / 96)))
+        self.charge_size = max(12, round(14 * primary[3] / 96))
+        self.copy_language = language()
+        self.charge_font = fonts.text(self.charge_size)
         left, top, right, bottom = win32gui.GetClientRect(self.parent)
         x0, y0, x1, y1 = self.primary_bounds
         if not (left <= x0 < x1 <= right and top <= y0 < y1 <= bottom):
@@ -1012,6 +1014,18 @@ class BilliardsOverlay:
                 self.position_layer(hwnd, win32con.HWND_TOP, win32con.SWP_SHOWWINDOW | win32con.SWP_NOZORDER)
         self.guide_key = key
 
+    def copy_face(self):
+        """The face for the overlay's own copy, rebuilt when the language changes.
+
+        The face is picked once at start-up, so a switch in the toolbar would otherwise keep
+        a font without the new script's glyphs and the meter label would draw as empty boxes.
+        """
+        code = language()
+        if code != self.copy_language:
+            self.copy_language = code
+            self.charge_font = fonts.text(self.charge_size)
+        return self.charge_font
+
     def draw_charge(self):
         origin = self.pointer.charge_origin
         if origin is None or self.table.state != 'ready':
@@ -1021,15 +1035,17 @@ class BilliardsOverlay:
             return
 
         percent = round(self.table.charge * 100)
-        key = (origin, percent, self.pointer.charge_falling)
+        # The language is part of the key so a switch repaints a meter cached in the old face.
+        key = (origin, percent, self.pointer.charge_falling, language())
         if key == self.charge_key:
             return
-        frame = charge_art(percent, self.charge_font, self.pointer.charge_falling)
+        font = self.copy_face()
+        frame = charge_art(percent, font, self.pointer.charge_falling)
         width, height = frame.size
 
         left, top, right, bottom = self.primary_bounds
         x, y = origin
-        gap = self.charge_font.size
+        gap = font.size
         x = x + gap if x + gap + width <= right else x - gap - width
         y = y + gap if y + gap + height <= bottom else y - gap - height
         hwnd = self.table_windows.get('charge') or self.table_window('charge')
@@ -1045,7 +1061,7 @@ class BilliardsOverlay:
                 self.round_actions_key = None
             return
         pressed = self.round_action_pressed[1] if self.round_action_pressed else None
-        key = (self.table.round_serial, self.round_action_hover, pressed)
+        key = (self.table.round_serial, self.round_action_hover, pressed, language())
         if key == self.round_actions_key:
             return
         hwnd = self.table_windows.get('round_actions') or self.table_window('round_actions')

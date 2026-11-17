@@ -8,10 +8,12 @@ from unittest import mock
 
 import win32api
 
-from dib import config, i18n
+from dib import config, fonts, i18n
 from dib.i18n import t
+from dib.overlay import BilliardsOverlay
 from dib.panel import MainPanel
 from dib.rank import RankSettings
+from dib.table import BilliardsMotion
 from dib.ui import DesktopBilliardsApp
 
 CALLBACKS = ('restart', 'toggle_guide', 'toggle_rank', 'leaderboard', 'toggle_felt',
@@ -109,6 +111,62 @@ class AppSwitchTests(unittest.TestCase):
         )
         DesktopBilliardsApp.set_language(app, 'zh-CN')
         self.assertEqual(calls, ['panel', 'buttons'])
+
+
+class OverlayCopyTests(unittest.TestCase):
+    """The layered table caches its own faces, so a switch has to rebuild and repaint them."""
+
+    def setUp(self):
+        self.addCleanup(i18n.set_language, None)
+        i18n.set_language('en')
+
+    def make_overlay(self):
+        game = BilliardsMotion((0, 0, 1920, 1080), [(64, 64)] * 15)
+        game.charge = .6
+        overlay = object.__new__(BilliardsOverlay)
+        overlay.table = game
+        overlay.pointer = SimpleNamespace(charge_origin=(400, 400), charge_falling=False)
+        overlay.copy_language = i18n.language()
+        overlay.charge_size = 20
+        overlay.charge_font = fonts.text(20)
+        overlay.charge_key = None
+        overlay.round_actions_key = None
+        overlay.round_action_hover = overlay.round_action_pressed = None
+        overlay.primary_bounds = game.bounds
+        overlay.table_windows = {'charge': 7, 'round_actions': 8}
+        overlay.present = mock.Mock()
+        overlay.position_layer = mock.Mock()
+        return overlay
+
+    @staticmethod
+    def renders_its_script(font, text):
+        """A face without the script draws the same empty box for every character."""
+        return bytes(font.getmask(text[0])) != bytes(font.getmask(text[1]))
+
+    def test_a_switch_mid_round_repaints_the_meter_in_a_face_with_the_new_script(self):
+        overlay = self.make_overlay()
+        overlay.draw_charge()
+        self.assertEqual(overlay.present.call_count, 1)
+        i18n.set_language('zh-CN')
+        overlay.draw_charge()
+        self.assertEqual(overlay.present.call_count, 2, 'the frame cached in the old face must be redrawn')
+        self.assertIs(overlay.charge_font, overlay.copy_face())
+        self.assertTrue(self.renders_its_script(overlay.charge_font, t('art.charge')),
+                        'the Chinese label needs a face that covers the script')
+
+    def test_nothing_is_repainted_while_the_language_stays_the_same(self):
+        overlay = self.make_overlay()
+        overlay.draw_charge()
+        overlay.draw_charge()
+        self.assertEqual(overlay.present.call_count, 1)
+
+    def test_the_end_of_round_buttons_redraw_in_the_new_language(self):
+        overlay = self.make_overlay()
+        overlay.table.state = 'finished'
+        overlay.draw_round_actions()
+        i18n.set_language('zh-CN')
+        overlay.draw_round_actions()
+        self.assertEqual(overlay.present.call_count, 2)
 
 
 class ToolbarFitTests(unittest.TestCase):
