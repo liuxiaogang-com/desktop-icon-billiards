@@ -503,6 +503,17 @@ class DesktopBilliardsApp:
             self.toolbar_hidden = False
         self.toolbar_hover_since = self.toolbar_leave_since = None
 
+    def grab_held(self):
+        """Whether any window holds the input grab, including menu and pop-down lists.
+
+        ``grab_current`` maps the grab window back to a tkinter widget, but a combobox
+        pop-down is created in Tcl, so that lookup raises KeyError('popdown').
+        """
+        try:
+            return bool(self.root.tk.call('grab', 'current'))
+        except tk.TclError:
+            return False
+
     def update_toolbar(self):
         """Keep the original toolbar area discoverable without hiding game windows."""
         if self.felt_enabled:
@@ -514,7 +525,7 @@ class DesktopBilliardsApp:
             messagebox.showinfo(t('ui.stealth.title'), t('ui.stealth.body'), parent=self.root)
             self.toolbar_leave_since = time.monotonic()
         # Keep dialogs and toolbar button interactions accessible.
-        if self.root.grab_current() is not None or any(
+        if self.grab_held() or any(
                 isinstance(child, tk.Toplevel) and child is not self.toolbar_eye and child.winfo_viewable()
                 for child in self.root.winfo_children()):
             self.show_toolbar()

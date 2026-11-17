@@ -9,7 +9,7 @@ class StealthToolbarTests(unittest.TestCase):
     def app(self):
         app = object.__new__(DesktopBilliardsApp)
         app.root = Mock()
-        app.root.grab_current.return_value = None
+        app.root.tk.call.return_value = ''
         app.root.winfo_children.return_value = []
         app.root.winfo_rootx.return_value = 100
         app.root.winfo_rooty.return_value = 20
@@ -80,3 +80,17 @@ class StealthToolbarTests(unittest.TestCase):
         app.reveal_toolbar()
         app.root.deiconify.assert_not_called()
         self.assertTrue(app.toolbar_hidden)
+
+    @patch('dib.ui.win32api.GetAsyncKeyState', return_value=0)
+    def test_tcl_created_popdown_grab_keeps_the_toolbar_visible(self, keys):
+        """A combobox pop-down holds the grab without being a tkinter widget."""
+        app = self.app()
+        app.stealth_announced = True
+        app.toolbar_hidden = True
+        app.toolbar_region = (100, 20, 900, 60)
+        app.root.tk.call.return_value = '.!frame.!combobox.popdown'
+        app.update_toolbar()
+        app.root.deiconify.assert_called_once()
+        self.assertFalse(app.toolbar_hidden)
+        # grab_current() raises KeyError('popdown') for that Tcl window.
+        app.root.grab_current.assert_not_called()
