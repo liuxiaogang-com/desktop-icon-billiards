@@ -15,8 +15,8 @@ import webbrowser
 import tkinter as tk
 import win32api
 import win32con
-from PIL import Image, ImageTk
-from tkinter import messagebox, ttk
+from PIL import Image
+from tkinter import messagebox
 
 from . import config, diag, i18n
 from .display import dpi_context, work_area
@@ -24,7 +24,7 @@ from .hotkeys import Hotkeys
 from .i18n import t
 from .instance import acquire_instance, claim_instance_mutex, publish_version
 from .overlay import BilliardsOverlay
-from .panel import MainPanel, ResultDialog, format_duration, show_update_dialog
+from .panel import DonationDialog, MainPanel, ResultDialog, format_duration, show_update_dialog
 from .paths import runtime_directory
 from .leaderboard import LeaderboardDialog
 from .rank import RankApi, RankController, RankSettings, average_seconds, data_directory
@@ -101,6 +101,7 @@ class DesktopBilliardsApp:
         # A language chosen in the toolbar wins over the Windows interface language.
         i18n.set_language(self.settings.get('language'))
         self.white_ball_dialog = None
+        self.update_dialog = None
         self.white_texture = None
         self.white_texture_path = self.settings.path.parent / 'white-ball.png'
         if self.white_texture_path.exists():
@@ -187,10 +188,10 @@ class DesktopBilliardsApp:
         self.settings.update(language=i18n.language())
         self.panel.retranslate()
         self.refresh_buttons()
-        if self.result_dialog is not None and self.result_dialog.alive():
-            self.result_dialog.retranslate()
-        if self.leaderboard_dialog is not None and self.leaderboard_dialog.alive():
-            self.leaderboard_dialog.retranslate()
+        for window in (self.result_dialog, self.leaderboard_dialog, self.white_ball_dialog,
+                       self.donation, self.update_dialog):
+            if window is not None and window.alive():
+                window.retranslate()
         diag.log(f'language changed: {i18n.language()}')
 
     # -- toolbar position --------------------------------------------------
@@ -242,7 +243,7 @@ class DesktopBilliardsApp:
         self.refresh_rank_button()
 
     def show_donation(self):
-        if self.donation is not None and self.donation.winfo_exists():
+        if self.donation is not None and self.donation.alive():
             self.donation.lift()
             return
         try:
@@ -252,25 +253,10 @@ class DesktopBilliardsApp:
         except OSError:
             messagebox.showwarning(t('ui.donate.title'), t('ui.donate.image_error'), parent=self.root)
             return
-        self.donation = dialog = tk.Toplevel(self.root)
-        dialog.title(t('ui.donate.title'))
-        dialog.transient(self.root)
-        dialog.resizable(False, False)
-        body = ttk.Frame(dialog, padding=14, style='Panel.TFrame')
-        body.pack()
-        ttk.Label(body, text=t('ui.donate.heading'), style='Table.TLabel').pack(pady=(0, 10))
-        photo = ImageTk.PhotoImage(image, master=dialog)
-        label = ttk.Label(body, image=photo)
-        label.image = photo
-        label.pack()
-        ttk.Label(body, text=t('ui.donate.note'),
-                  style='Table.TLabel', wraplength=340, justify='center').pack(pady=(10, 0))
-        ttk.Button(body, text=t('ui.donate.close'), command=dialog.destroy,
-                   style='Table.TButton').pack(pady=(10, 0))
-        dialog.bind('<Escape>', lambda event: dialog.destroy())
+        self.donation = DonationDialog(self.root, image)
 
     def show_white_ball(self):
-        if self.white_ball_dialog is not None and self.white_ball_dialog.window.winfo_exists():
+        if self.white_ball_dialog is not None and self.white_ball_dialog.alive():
             self.white_ball_dialog.window.lift()
             return
         self.white_ball_dialog = WhiteBallDialog(self.root, self.white_texture_path,
@@ -324,7 +310,8 @@ class DesktopBilliardsApp:
                 messagebox.showerror(t('ui.update.open_failed_title'), t('ui.update.open_failed_body'),
                                      parent=dialog)
 
-        show_update_dialog(self.root, config.VERSION, info, release_entries(info), download)
+        self.update_dialog = show_update_dialog(self.root, config.VERSION, info,
+                                                release_entries(info), download)
 
     # -- game lifecycle ----------------------------------------------------
     def start(self):

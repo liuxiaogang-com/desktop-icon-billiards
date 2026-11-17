@@ -7,14 +7,16 @@ from types import SimpleNamespace
 from unittest import mock
 
 import win32api
+from PIL import Image
 
 from dib import config, fonts, i18n
 from dib.i18n import t
 from dib.overlay import BilliardsOverlay
-from dib.panel import MainPanel
+from dib.panel import DonationDialog, MainPanel, show_update_dialog
 from dib.rank import RankSettings
 from dib.table import BilliardsMotion
 from dib.ui import DesktopBilliardsApp
+from dib.white_ball import CropDialog, WhiteBallDialog
 
 CALLBACKS = ('restart', 'toggle_guide', 'toggle_rank', 'leaderboard', 'toggle_felt',
              'check_updates', 'donate', 'quit', 'white_ball', 'open_credit')
@@ -88,16 +90,23 @@ class AppSwitchTests(unittest.TestCase):
 
     def test_every_open_window_follows_the_switch(self):
         calls = []
+
+        def window(name):
+            return SimpleNamespace(alive=lambda: True, retranslate=lambda: calls.append(name))
+
         app = SimpleNamespace(
             settings=self.settings,
             panel=SimpleNamespace(retranslate=lambda: calls.append('panel')),
             refresh_buttons=lambda: calls.append('buttons'),
-            result_dialog=SimpleNamespace(alive=lambda: True, retranslate=lambda: calls.append('result')),
-            leaderboard_dialog=SimpleNamespace(alive=lambda: True, retranslate=lambda: calls.append('board')),
+            result_dialog=window('result'),
+            leaderboard_dialog=window('board'),
+            white_ball_dialog=window('white'),
+            donation=window('donation'),
+            update_dialog=window('update'),
         )
         DesktopBilliardsApp.set_language(app, 'en')
         self.assertEqual(i18n.language(), 'en')
-        self.assertEqual(calls, ['panel', 'buttons', 'result', 'board'])
+        self.assertEqual(calls, ['panel', 'buttons', 'result', 'board', 'white', 'donation', 'update'])
         self.assertEqual(self.settings.get('language'), 'en')
 
     def test_a_closed_window_is_not_touched(self):
@@ -108,9 +117,12 @@ class AppSwitchTests(unittest.TestCase):
             refresh_buttons=lambda: calls.append('buttons'),
             result_dialog=None,
             leaderboard_dialog=SimpleNamespace(alive=lambda: False, retranslate=lambda: calls.append('board')),
+            white_ball_dialog=SimpleNamespace(alive=lambda: False, retranslate=lambda: calls.append('white')),
+            donation=SimpleNamespace(alive=lambda: True, retranslate=lambda: calls.append('donation')),
+            update_dialog=None,
         )
         DesktopBilliardsApp.set_language(app, 'zh-CN')
-        self.assertEqual(calls, ['panel', 'buttons'])
+        self.assertEqual(calls, ['panel', 'buttons', 'donation'])
 
 
 class OverlayCopyTests(unittest.TestCase):
@@ -167,6 +179,106 @@ class OverlayCopyTests(unittest.TestCase):
         i18n.set_language('zh-CN')
         overlay.draw_round_actions()
         self.assertEqual(overlay.present.call_count, 2)
+
+
+class DialogSwitchTests(unittest.TestCase):
+    """The dialogs that can stay open across a switch re-read their copy, not their state."""
+
+    def setUp(self):
+        self.addCleanup(i18n.set_language, None)
+        i18n.set_language('zh-CN')
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.folder = Path(folder.name)
+        self.root = tk.Tk()
+        self.root.withdraw()
+        self.addCleanup(self.root.destroy)
+
+    def test_the_white_ball_window_keeps_its_texture_and_reset_state(self):
+        texture = Image.new('RGBA', (256, 256), 'blue')
+        dialog = WhiteBallDialog(self.root, self.folder / 'white-ball.png', texture, lambda value: None)
+        self.addCleanup(dialog.window.destroy)
+        self.root.update()
+        corner = (dialog.window.winfo_rootx(), dialog.window.winfo_rooty())
+        i18n.set_language('en')
+        dialog.retranslate()
+        self.root.update()
+        self.assertEqual(dialog.window.title(), t('white_ball.title'))
+        self.assertEqual(dialog.title_label.cget('text'), t('white_ball.title'))
+        self.assertEqual(dialog.intro.cget('text'), t('white_ball.intro'))
+        self.assertEqual(dialog.hint.cget('text'), t('white_ball.hint'))
+        self.assertEqual(dialog.choose_button.cget('text'), t('white_ball.choose'))
+        self.assertEqual(dialog.reset_button.cget('text'), t('white_ball.reset'))
+        self.assertEqual(dialog.status.cget('text'), t('white_ball.status_custom'))
+        self.assertIs(dialog.texture, texture, 'the chosen ball must survive the switch')
+        self.assertTrue(dialog.reset_button.enabled)
+        self.assertEqual((dialog.window.winfo_rootx(), dialog.window.winfo_rooty()), corner)
+
+    def test_the_crop_window_keeps_the_zoom_and_the_centre(self):
+        source = Image.new('RGB', (300, 100), 'red')
+        editor = CropDialog(self.root, source, lambda texture: None)
+        self.addCleanup(editor.close)
+        editor.scale('2.5')
+        editor.render()
+        zoom, centre = editor.zoom, editor.center
+        i18n.set_language('en')
+        editor.retranslate()
+        self.assertEqual(editor.window.title(), t('white_ball.crop_title'))
+        self.assertEqual(editor.hint.cget('text'), t('white_ball.crop_hint'))
+        self.assertEqual(editor.cancel_button.cget('text'), t('white_ball.cancel'))
+        self.assertEqual(editor.apply_button.cget('text'), t('white_ball.apply'))
+        self.assertEqual(editor.zoom, zoom)
+        self.assertEqual(editor.center, centre)
+
+    def test_the_white_ball_window_forwards_the_switch_to_an_open_crop_window(self):
+        dialog = WhiteBallDialog(self.root, self.folder / 'white-ball.png', None, lambda value: None)
+        self.addCleanup(dialog.window.destroy)
+        editor = CropDialog(dialog.window, Image.new('RGB', (300, 100), 'red'), lambda texture: None)
+        self.addCleanup(editor.close)
+        dialog.crop = editor
+        i18n.set_language('en')
+        dialog.retranslate()
+        self.assertEqual(editor.window.title(), t('white_ball.crop_title'))
+        self.assertEqual(editor.apply_button.cget('text'), t('white_ball.apply'))
+
+    def test_the_donation_window_follows_the_switch(self):
+        dialog = DonationDialog(self.root, Image.new('RGB', (40, 40), 'gold'))
+        self.addCleanup(dialog.destroy)
+        self.assertEqual(dialog.title(), t('ui.donate.title'))
+        i18n.set_language('en')
+        dialog.retranslate()
+        self.assertEqual(dialog.title(), t('ui.donate.title'))
+        self.assertEqual(dialog.heading.cget('text'), t('ui.donate.heading'))
+        self.assertEqual(dialog.note.cget('text'), t('ui.donate.note'))
+        self.assertEqual(dialog.close_button.cget('text'), t('ui.donate.close'))
+        self.assertTrue(dialog.alive())
+
+    def test_the_update_window_keeps_the_server_notes_and_the_scroll(self):
+        remote = '# 更新重点\n- 服务器给的 **原文**\n' + '说明行\n' * 40
+        entries = [{'version': '0.2.4', 'date': '2026-11-17 10:00', 'notes': remote},
+                   {'version': '0.2.3', 'notes': '旧版本说明'}]
+        with mock.patch('dib.panel.win32api.GetMonitorInfo', return_value={'Work': (0, 0, 800, 600)}):
+            dialog = show_update_dialog(self.root, '0.2.3', entries[0], entries, lambda window: None)
+        self.addCleanup(dialog.destroy)
+        self.root.update()
+        dialog.notes.yview_moveto(.5)
+        self.root.update()
+        top = dialog.notes.index('@0,0')
+        self.assertNotEqual(top, '1.0', 'the notes must be scrollable for this check')
+        i18n.set_language('en')
+        dialog.retranslate()
+        self.root.update()
+        self.assertEqual(dialog.title(), t('panel.update.title'))
+        self.assertEqual(dialog.heading.cget('text'), t('panel.update.heading'))
+        self.assertEqual(dialog.download.cget('text'), t('panel.update.download'))
+        self.assertEqual(dialog.later.cget('text'), t('panel.update.later'))
+        body = dialog.notes.get('1.0', 'end')
+        self.assertIn('服务器给的', body, 'notes from the server are not translated')
+        self.assertIn('原文', body)
+        self.assertIn('旧版本说明', body)
+        self.assertNotIn('**', body, 'the markup is rendered, not translated')
+        self.assertEqual(dialog.notes.index('@0,0'), top, 'the reader keeps their place')
+        self.assertTrue(dialog.alive())
 
 
 class ToolbarFitTests(unittest.TestCase):

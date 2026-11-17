@@ -82,8 +82,8 @@ class CropDialog:
         self.side = max(96, min(320, right - left - 80, bottom - top - 230))
         body = tk.Frame(dialog, bg=BG, padx=20, pady=16)
         body.pack()
-        tk.Label(body, text=t('white_ball.crop_hint'), font=ui_font(9),
-                 bg=BG, fg=MUTED).pack(pady=(0, 12))
+        self.hint = tk.Label(body, text=t('white_ball.crop_hint'), font=ui_font(9), bg=BG, fg=MUTED)
+        self.hint.pack(pady=(0, 12))
         self.canvas = tk.Canvas(body, width=self.side, height=self.side, bg=CARD,
                                 highlightthickness=0, cursor='fleur')
         self.canvas.pack()
@@ -101,9 +101,11 @@ class CropDialog:
         self.zoom_label.pack()
         actions = tk.Frame(body, bg=BG)
         actions.pack(fill='x', pady=(12, 0))
-        Pill(actions, t('white_ball.cancel'), self.close, 'soft', padx=16, pady=8).pack(side='left')
-        Pill(actions, t('white_ball.apply'), self.confirm, 'primary', bold=True,
-             padx=16, pady=8).pack(side='right')
+        self.cancel_button = Pill(actions, t('white_ball.cancel'), self.close, 'soft', padx=16, pady=8)
+        self.cancel_button.pack(side='left')
+        self.apply_button = Pill(actions, t('white_ball.apply'), self.confirm, 'primary', bold=True,
+                                 padx=16, pady=8)
+        self.apply_button.pack(side='right')
         dialog.bind('<Escape>', lambda event: self.close())
         dialog.protocol('WM_DELETE_WINDOW', self.close)
         self.render()
@@ -170,12 +172,28 @@ class CropDialog:
         self.window.grab_release()
         self.window.destroy()
 
+    def alive(self):
+        return bool(self.window.winfo_exists())
+
+    def retranslate(self):
+        """Re-read the copy; the crop, the zoom and the picture stay as they are."""
+        if not self.alive():
+            return
+        self.window.title(t('white_ball.crop_title'))
+        self.hint.configure(text=t('white_ball.crop_hint'), font=ui_font(9))
+        self.zoom_label.configure(font=ui_font(9))
+        self.cancel_button.set(t('white_ball.cancel'))
+        self.cancel_button.restyle()
+        self.apply_button.set(t('white_ball.apply'))
+        self.apply_button.restyle()
+
 
 class WhiteBallDialog:
     def __init__(self, root, path, texture, on_change):
         self.path = path
         self.texture = texture
         self.on_change = on_change
+        self.crop = None
         self.window = dialog = tk.Toplevel(root)
         dialog.title(t('white_ball.title'))
         dialog.configure(bg=BG)
@@ -183,21 +201,24 @@ class WhiteBallDialog:
         # A transient child would disappear when the stealth toolbar withdraws.
         body = tk.Frame(dialog, bg=BG, padx=24, pady=20)
         body.pack(fill='both', expand=True)
-        tk.Label(body, text=t('white_ball.title'), font=ui_font(14, bold=True), fg=TEXT, bg=BG).pack()
-        tk.Label(body, text=t('white_ball.intro'),
-                 font=ui_font(9), fg=MUTED, bg=BG).pack(anchor='w', pady=(5, 14))
+        self.title_label = tk.Label(body, text=t('white_ball.title'), font=ui_font(14, bold=True),
+                                    fg=TEXT, bg=BG)
+        self.title_label.pack()
+        self.intro = tk.Label(body, text=t('white_ball.intro'), font=ui_font(9), fg=MUTED, bg=BG)
+        self.intro.pack(anchor='w', pady=(5, 14))
         self.preview = tk.Label(body, bg=CARD, padx=70, pady=18)
         self.preview.pack(fill='x')
         self.status = tk.Label(body, font=ui_font(9), fg=ACCENT, bg=BG)
         self.status.pack(pady=(10, 14))
         actions = tk.Frame(body, bg=BG)
         actions.pack(fill='x')
-        Pill(actions, t('white_ball.choose'), self.choose, 'primary', bold=True,
-             padx=16, pady=8).pack(side='left')
+        self.choose_button = Pill(actions, t('white_ball.choose'), self.choose, 'primary', bold=True,
+                                  padx=16, pady=8)
+        self.choose_button.pack(side='left')
         self.reset_button = Pill(actions, t('white_ball.reset'), self.reset, 'soft', padx=16, pady=8)
         self.reset_button.pack(side='right')
-        tk.Label(body, text=t('white_ball.hint'),
-                 font=ui_font(8), fg=MUTED, bg=BG).pack(pady=(12, 0))
+        self.hint = tk.Label(body, text=t('white_ball.hint'), font=ui_font(8), fg=MUTED, bg=BG)
+        self.hint.pack(pady=(12, 0))
         dialog.bind('<Escape>', lambda event: dialog.destroy())
         self.refresh()
         dialog.update_idletasks()
@@ -208,9 +229,32 @@ class WhiteBallDialog:
     def refresh(self):
         self.photo = ImageTk.PhotoImage(white_art(46, shaded=True, texture=self.texture), master=self.window)
         self.preview.configure(image=self.photo)
+        self._state_text()
+
+    def _state_text(self):
         self.status.configure(text=t('white_ball.status_custom') if self.texture is not None
                               else t('white_ball.status_default'))
         self.reset_button.set(enabled=self.texture is not None or self.path.exists())
+
+    def alive(self):
+        return bool(self.window.winfo_exists())
+
+    def retranslate(self):
+        """Re-read the copy, keeping the chosen texture, the preview and the window size."""
+        if not self.alive():
+            return
+        self.window.title(t('white_ball.title'))
+        self.title_label.configure(text=t('white_ball.title'), font=ui_font(14, bold=True))
+        self.intro.configure(text=t('white_ball.intro'), font=ui_font(9))
+        self.hint.configure(text=t('white_ball.hint'), font=ui_font(8))
+        self.status.configure(font=ui_font(9))
+        self.choose_button.set(t('white_ball.choose'))
+        self.choose_button.restyle()
+        self.reset_button.set(t('white_ball.reset'))
+        self.reset_button.restyle()
+        self._state_text()
+        if self.crop is not None and self.crop.alive():
+            self.crop.retranslate()
 
     def apply(self, texture):
         save_texture(self.path, texture)
@@ -224,7 +268,7 @@ class WhiteBallDialog:
         if not path:
             return
         try:
-            CropDialog(self.window, read_source(path), self.apply)
+            self.crop = CropDialog(self.window, read_source(path), self.apply)
         except (OSError, ValueError, Image.DecompressionBombError) as error:
             messagebox.showwarning(t('white_ball.title'), t('white_ball.error.load_failed', error=error),
                                    parent=self.window)

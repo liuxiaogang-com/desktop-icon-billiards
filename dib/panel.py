@@ -542,61 +542,137 @@ class ResultDialog:
         self._render_feedback()
 
 
-def show_update_dialog(root, current, info, entries, on_download):
-    """Native, display-only rich release notes with fixed header/footer."""
-    dialog = tk.Toplevel(root)
-    dialog.withdraw()
-    dialog.title(t('panel.update.title'))
-    dialog.configure(bg=BG)
-    if root.state() != 'withdrawn':
-        dialog.transient(root)
-    dialog.resizable(True, True)
-    scale = max(1., root.winfo_fpixels('1i') / 96)
-    pad = round(18 * scale)
-    try:
-        dialog.iconbitmap(str(card.LOGO.with_suffix('.ico')))
-    except tk.TclError:
-        pass
-    shell = tk.Frame(dialog, bg=BG, padx=pad, pady=pad)
-    shell.pack(fill='both', expand=True)
-    header = tk.Frame(shell, bg=BG)
-    header.pack(fill='x', pady=(0, round(12 * scale)))
-    tk.Label(header, text=t('panel.update.heading'), font=ui_font(13, bold=True), fg=TEXT, bg=BG).pack(side='left')
-    tk.Label(header, text=t('panel.update.current', version=current), font=ui_font(9), fg=MUTED,
-             bg=BG).pack(side='right')
+class DonationDialog(tk.Toplevel):
+    """The donation picture with its caption and close button."""
 
-    footer = tk.Frame(shell, bg=BG)
-    footer.pack(side='bottom', fill='x', pady=(round(12 * scale), 0))
-    Pill(footer, t('panel.update.download'), lambda: on_download(dialog), 'primary', bold=True,
-         padx=20, pady=10).pack(side='right')
-    Pill(footer, t('panel.update.later'), dialog.destroy, 'soft', padx=18, pady=10).pack(side='right', padx=(0, 10))
-    body = tk.Frame(shell, bg=CARD, highlightthickness=1, highlightbackground='#29443c')
-    body.pack(fill='both', expand=True)
-    notes = tk.Text(body, width=38, height=10, wrap='word', bg=CARD, fg=TEXT, relief='flat', bd=0,
-                    highlightthickness=0, padx=round(18 * scale), pady=round(14 * scale),
-                    font=ui_font(10), spacing1=2, spacing3=round(9 * scale), cursor='arrow',
-                    insertwidth=0, selectbackground='#2b4a44')
-    scrollbar = ttk.Scrollbar(body, orient='vertical', command=notes.yview, style='Dark.Vertical.TScrollbar')
-    notes.configure(yscrollcommand=scrollbar.set)
-    scrollbar.pack(side='right', fill='y')
-    notes.pack(side='left', fill='both', expand=True)
-    notes.tag_configure('body', foreground='#c4d9d2')
-    notes.tag_configure('heading', font=ui_font(12, bold=True), foreground=TEXT,
-                        spacing1=round(12 * scale), spacing3=round(8 * scale))
-    notes.tag_configure('version', font=(NUMBERS, 13, 'bold'), foreground=ACCENT,
-                        spacing1=round(18 * scale), spacing3=round(12 * scale))
-    notes.tag_configure('first_version', spacing1=0)
-    notes.tag_configure('date', font=ui_font(9), foreground=MUTED)
-    notes.tag_configure('list', lmargin1=0, lmargin2=round(19 * scale), foreground='#c4d9d2')
-    notes.tag_configure('quote', foreground=MUTED, lmargin1=round(12 * scale), lmargin2=round(12 * scale))
-    notes.tag_configure('bold', font=ui_font(10, bold=True), foreground=TEXT)
-    notes.tag_configure('code', font=('Consolas', 10), foreground=ACCENT, background='#203a32')
-    notes.tag_configure('space', font=ui_font(3), spacing1=0, spacing3=0)
+    def __init__(self, root, image):
+        super().__init__(root)
+        self.transient(root)
+        self.resizable(False, False)
+        body = ttk.Frame(self, padding=14, style='Panel.TFrame')
+        body.pack()
+        self.heading = ttk.Label(body, style='Table.TLabel')
+        self.heading.pack(pady=(0, 10))
+        self.photo = ImageTk.PhotoImage(image, master=self)
+        ttk.Label(body, image=self.photo).pack()
+        self.note = ttk.Label(body, style='Table.TLabel', wraplength=340, justify='center')
+        self.note.pack(pady=(10, 0))
+        self.close_button = ttk.Button(body, command=self.destroy, style='Table.TButton')
+        self.close_button.pack(pady=(10, 0))
+        self.bind('<Escape>', lambda event: self.destroy())
+        self.retranslate()
 
-    def render():
+    def alive(self):
+        return bool(self.winfo_exists())
+
+    def retranslate(self):
+        """Re-read the copy without touching the picture or the window geometry."""
+        if not self.alive():
+            return
+        self.title(t('ui.donate.title'))
+        self.heading.configure(text=t('ui.donate.heading'))
+        self.note.configure(text=t('ui.donate.note'))
+        self.close_button.configure(text=t('ui.donate.close'))
+
+
+class UpdateDialog(tk.Toplevel):
+    """Native, display-only rich release notes with fixed header/footer.
+
+    The notes come from the release feed, so they are never translated: :meth:`retranslate`
+    refreshes the chrome and the note faces only, keeping the reader's scroll position.
+    """
+
+    def __init__(self, root, current, info, entries, on_download):
+        super().__init__(root)
+        self.current = current
+        self.entries = entries
+        self.on_download = on_download
+        self.withdraw()
+        self.configure(bg=BG)
+        if root.state() != 'withdrawn':
+            self.transient(root)
+        self.resizable(True, True)
+        self.scale = max(1., root.winfo_fpixels('1i') / 96)
+        scale = self.scale
+        pad = round(18 * scale)
+        try:
+            self.iconbitmap(str(card.LOGO.with_suffix('.ico')))
+        except tk.TclError:
+            pass
+        self.shell = shell = tk.Frame(self, bg=BG, padx=pad, pady=pad)
+        shell.pack(fill='both', expand=True)
+        header = tk.Frame(shell, bg=BG)
+        header.pack(fill='x', pady=(0, round(12 * scale)))
+        self.heading = tk.Label(header, font=ui_font(13, bold=True), fg=TEXT, bg=BG)
+        self.heading.pack(side='left')
+        self.current_label = tk.Label(header, font=ui_font(9), fg=MUTED, bg=BG)
+        self.current_label.pack(side='right')
+
+        footer = tk.Frame(shell, bg=BG)
+        footer.pack(side='bottom', fill='x', pady=(round(12 * scale), 0))
+        self.download = Pill(footer, '', lambda: self.on_download(self), 'primary', bold=True,
+                             padx=20, pady=10)
+        self.download.pack(side='right')
+        self.later = Pill(footer, '', self.destroy, 'soft', padx=18, pady=10)
+        self.later.pack(side='right', padx=(0, 10))
+        body = tk.Frame(shell, bg=CARD, highlightthickness=1, highlightbackground='#29443c')
+        body.pack(fill='both', expand=True)
+        notes = self.notes = tk.Text(body, width=38, height=10, wrap='word', bg=CARD, fg=TEXT,
+                                     relief='flat', bd=0, highlightthickness=0,
+                                     padx=round(18 * scale), pady=round(14 * scale),
+                                     spacing1=2, cursor='arrow', insertwidth=0,
+                                     selectbackground='#2b4a44')
+        scrollbar = ttk.Scrollbar(body, orient='vertical', command=notes.yview,
+                                  style='Dark.Vertical.TScrollbar')
+        notes.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side='right', fill='y')
+        notes.pack(side='left', fill='both', expand=True)
+        self.retranslate()
+        self.bind('<Escape>', lambda event: self.destroy())
+        self.update_idletasks()
+        monitor = win32api.MonitorFromPoint((root.winfo_rootx(), root.winfo_rooty()),
+                                           win32con.MONITOR_DEFAULTTONEAREST)
+        left, top, right, bottom = win32api.GetMonitorInfo(monitor)['Work']
+        # Leave space for native borders and taskbar, including high-DPI small displays.
+        width = max(1, min(round(620 * scale), right - left - round(32 * scale)))
+        height = max(1, min(round(520 * scale), bottom - top - round(64 * scale)))
+        self.minsize(min(width, round(400 * scale)), min(height, round(280 * scale)))
+        self.maxsize(width, height)
+        x = left + (right - left - width) // 2
+        y = top + (bottom - top - height) // 2
+        self.geometry(f'{width}x{height}+{x}+{y}')
+        self.deiconify()
+        self.lift()
+
+    def alive(self):
+        return bool(self.winfo_exists())
+
+    def configure_tags(self):
+        """The tag faces follow the interface language; the note text itself does not."""
+        scale = self.scale
+        notes = self.notes
+        notes.configure(font=ui_font(10), spacing3=round(9 * scale))
+        notes.tag_configure('body', foreground='#c4d9d2')
+        notes.tag_configure('heading', font=ui_font(12, bold=True), foreground=TEXT,
+                            spacing1=round(12 * scale), spacing3=round(8 * scale))
+        notes.tag_configure('version', font=(NUMBERS, 13, 'bold'), foreground=ACCENT,
+                            spacing1=round(18 * scale), spacing3=round(12 * scale))
+        notes.tag_configure('first_version', spacing1=0)
+        notes.tag_configure('date', font=ui_font(9), foreground=MUTED)
+        notes.tag_configure('list', lmargin1=0, lmargin2=round(19 * scale), foreground='#c4d9d2')
+        notes.tag_configure('quote', foreground=MUTED, lmargin1=round(12 * scale),
+                            lmargin2=round(12 * scale))
+        notes.tag_configure('bold', font=ui_font(10, bold=True), foreground=TEXT)
+        notes.tag_configure('code', font=('Consolas', 10), foreground=ACCENT, background='#203a32')
+        notes.tag_configure('space', font=ui_font(3), spacing1=0, spacing3=0)
+
+    def render(self):
+        notes = self.notes
+        # Keep the reader's place by line: a new font re-wraps, so a fraction would drift.
+        top = notes.index('@0,0')
         notes.configure(state='normal')
         notes.delete('1.0', 'end')
-        for index, entry in enumerate(entries):
+        for index, entry in enumerate(self.entries):
             tags = ('version', 'first_version') if index == 0 else ('version',)
             notes.insert('end', f'v{entry["version"]}' + (t('panel.update.latest_tag') if index == 0 else ''), tags)
             if entry.get('date'):
@@ -611,22 +687,23 @@ def show_update_dialog(root, current, info, entries, on_download):
                     notes.insert('end', text, tags)
                 notes.insert('end', '\n', kind)
         notes.configure(state='disabled')
-        notes.yview_moveto(0)
+        notes.yview(top)
 
-    render()
-    dialog.bind('<Escape>', lambda event: dialog.destroy())
-    dialog.update_idletasks()
-    monitor = win32api.MonitorFromPoint((root.winfo_rootx(), root.winfo_rooty()),
-                                       win32con.MONITOR_DEFAULTTONEAREST)
-    left, top, right, bottom = win32api.GetMonitorInfo(monitor)['Work']
-    # Leave space for native borders and taskbar, including high-DPI small displays.
-    width = max(1, min(round(620 * scale), right - left - round(32 * scale)))
-    height = max(1, min(round(520 * scale), bottom - top - round(64 * scale)))
-    dialog.minsize(min(width, round(400 * scale)), min(height, round(280 * scale)))
-    dialog.maxsize(width, height)
-    x = left + (right - left - width) // 2
-    y = top + (bottom - top - height) // 2
-    dialog.geometry(f'{width}x{height}+{x}+{y}')
-    dialog.deiconify()
-    dialog.lift()
-    return dialog
+    def retranslate(self):
+        if not self.alive():
+            return
+        self.title(t('panel.update.title'))
+        self.heading.configure(text=t('panel.update.heading'), font=ui_font(13, bold=True))
+        self.current_label.configure(text=t('panel.update.current', version=self.current),
+                                     font=ui_font(9))
+        self.download.set(t('panel.update.download'))
+        self.download.restyle()
+        self.later.set(t('panel.update.later'))
+        self.later.restyle()
+        self.configure_tags()
+        self.render()
+
+
+def show_update_dialog(root, current, info, entries, on_download):
+    """Native, display-only rich release notes with fixed header/footer."""
+    return UpdateDialog(root, current, info, entries, on_download)
