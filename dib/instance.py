@@ -12,7 +12,9 @@ import win32api
 import win32con
 import win32gui
 
-from .config import EXE_PATTERN, MUTEX, PRODUCT_NAME, VERSION_PROPERTY
+from . import fonts
+from .config import EXE_PATTERN, MUTEX, PRODUCT_NAMES, VERSION_PROPERTY
+from .i18n import t
 
 ERROR_ALREADY_EXISTS = 183
 
@@ -92,7 +94,7 @@ def _is_product_window(hwnd: int) -> bool:
     user32.GetPropW.restype = ctypes.c_void_p
     if user32.GetPropW(hwnd, VERSION_PROPERTY):
         return True
-    return win32gui.GetWindowText(hwnd).startswith(PRODUCT_NAME)
+    return win32gui.GetWindowText(hwnd).startswith(PRODUCT_NAMES)
 
 
 def find_existing_window() -> int:
@@ -123,19 +125,15 @@ def confirm_switch(hwnd: int, current: str | None, requested: str) -> bool:
     """Ask whether to replace the running version; returns True to switch."""
     root = tk.Tk()
     root.withdraw()
-    root.title('切换版本')
+    root.title(t('instance.title'))
     root.resizable(False, False)
     body = ttk.Frame(root, padding=20)
     body.pack(fill='both', expand=True)
-    label = current or '未知版本'
+    label = current or t('instance.version_unknown')
     ttk.Label(
         body,
-        text=(
-            f'{PRODUCT_NAME}\n\n'
-            f'正在运行：{label}\n本次打开：{requested}\n\n'
-            '切换会停止游戏并恢复原桌面图标。'
-        ),
-        font=('Microsoft YaHei UI', 10),
+        text=t('instance.body', product=t('product.name'), running=label, requested=requested),
+        font=(fonts.ui_family(), 10),
     ).pack(anchor='w')
     actions = ttk.Frame(body)
     actions.pack(fill='x', pady=(18, 0))
@@ -145,8 +143,8 @@ def confirm_switch(hwnd: int, current: str | None, requested: str) -> bool:
         answer[0] = value
         root.destroy()
 
-    ttk.Button(actions, text='继续使用已打开版本', command=lambda: choose(False)).pack(side='left')
-    ttk.Button(actions, text=f'切换到 {requested}', command=lambda: choose(True)).pack(
+    ttk.Button(actions, text=t('instance.keep'), command=lambda: choose(False)).pack(side='left')
+    ttk.Button(actions, text=t('instance.switch', version=requested), command=lambda: choose(True)).pack(
         side='right', padx=(12, 0)
     )
     root.protocol('WM_DELETE_WINDOW', lambda: choose(False))
@@ -199,7 +197,7 @@ def acquire_instance(version: str):
             return handle
         time.sleep(0.05)
     if not hwnd:
-        messagebox.showinfo('程序正在启动', '已有实例正在启动，请稍后再打开。')
+        messagebox.showinfo(t('instance.starting_title'), t('instance.starting_body'))
         raise SystemExit(0)
     current = running_version(hwnd)
     if current == version:
@@ -218,7 +216,7 @@ def acquire_instance(version: str):
         time.sleep(0.1)
     activate(hwnd)
     messagebox.showinfo(
-        '暂时无法切换',
-        '旧版本尚未退出。请先在旧窗口完成桌面恢复并关闭，再打开此版本。',
+        t('instance.error_title'),
+        t('instance.error_body'),
     )
     raise SystemExit(0)

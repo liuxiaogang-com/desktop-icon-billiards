@@ -15,15 +15,16 @@ import webbrowser
 import tkinter as tk
 import win32api
 import win32con
-from PIL import Image, ImageTk
-from tkinter import messagebox, ttk
+from PIL import Image
+from tkinter import messagebox
 
-from . import config, diag
-from .display import dpi_context
+from . import config, diag, i18n
+from .display import dpi_context, work_area
 from .hotkeys import Hotkeys
+from .i18n import t
 from .instance import acquire_instance, claim_instance_mutex, publish_version
 from .overlay import BilliardsOverlay
-from .panel import MainPanel, ResultDialog, format_duration, show_update_dialog
+from .panel import DonationDialog, MainPanel, ResultDialog, format_duration, show_update_dialog
 from .paths import runtime_directory
 from .leaderboard import LeaderboardDialog
 from .rank import RankApi, RankController, RankSettings, average_seconds, data_directory
@@ -31,16 +32,6 @@ from .runner import BilliardsRunner
 from .shell import LayoutSession, ShellDesktop
 from .update import fetch_update, release_entries
 from .white_ball import WhiteBallDialog, read_texture
-
-
-RANK_CONSENT = (
-    '开启后，每局清台时会向排名服务器提交：\n'
-    '  • 本局用时、图标数量、击球次数\n'
-    '  • 一个匿名设备标识（由本机系统 ID 加盐哈希得到，无法还原）\n\n'
-    '不会上传图标名称、桌面截图或任何个人文件信息。可随时在主窗口关闭。\n\n'
-    '是否开启全球排名？'
-)
-RANK_INTRO = '现在可以和全球玩家比谁清台更快了。\n\n' + RANK_CONSENT
 
 
 _last_log = {}
@@ -69,8 +60,8 @@ def describe_error(error):
     frame = next((f for f in reversed(frames) if 'dib' in f.filename.replace('\\', '/').split('/')), None)
     frame = frame or (frames[-1] if frames else None)
     where = f'{os.path.basename(frame.filename)}:{frame.lineno} in {frame.name}' if frame else ''
-    text = f'{error}\n\n出错位置：{where}' if where else str(error)
-    return f'{text}\n\n详细信息见 %TEMP%\\DesktopIconBilliards\\error.log'
+    text = t('ui.error.location', error=error, where=where) if where else str(error)
+    return text + t('ui.error.log_hint')
 
 
 class DesktopBilliardsApp:
@@ -86,7 +77,7 @@ class DesktopBilliardsApp:
         self.closing = False
         self.deadline = 0.0
         self.journal = runtime_directory() / 'layout.json'
-        root.title(config.WINDOW_TITLE)
+        root.title(config.window_title())
         root.resizable(False, False)
         try:
             root.iconbitmap(str(config.ICON_PATH))
@@ -107,7 +98,10 @@ class DesktopBilliardsApp:
         self.result_observation = None
         self.update_results = queue.SimpleQueue()
         self.settings = self.make_settings()
+        # A language chosen in the toolbar wins over the Windows interface language.
+        i18n.set_language(self.settings.get('language'))
         self.white_ball_dialog = None
+        self.update_dialog = None
         self.white_texture = None
         self.white_texture_path = self.settings.path.parent / 'white-ball.png'
         if self.white_texture_path.exists():
@@ -118,6 +112,7 @@ class DesktopBilliardsApp:
         self.felt_enabled = bool(self.settings.get('felt', True))
         self.stealth_announced = False
         self.toolbar_hidden = False
+        self.toolbar_ready = False
         self.toolbar_eye = None
         self.toolbar_region = None
         self.toolbar_hover_since = None
@@ -129,7 +124,8 @@ class DesktopBilliardsApp:
             'leaderboard': self.show_leaderboard,
             'white_ball': self.show_white_ball,
             'open_credit': lambda: webbrowser.open(config.DOUYIN_URL),
-        }, config.DOUYIN_CREDIT)
+            'language': self.set_language,
+        }, t('product.credit'))
         publish_version(root, config.VERSION)
         self.time_title, self.time_value = panel.time_title, panel.time_value
         self.count_title, self.count_value = panel.count_title, panel.count_value
@@ -163,33 +159,65 @@ class DesktopBilliardsApp:
 
     def refresh_rank_button(self):
         if not self.rank.available:
-            self.panel.set_look('rank', '排名 —', 'off', enabled=False)
+            self.panel.set_look('rank', t('panel.toolbar.rank_unavailable'), 'off', enabled=False)
             return
         on = self.rank.enabled
-        self.panel.set_look('rank', '排名 开' if on else '排名 关', 'on' if on else 'off', enabled=True)
+        self.panel.set_look('rank', t('panel.toolbar.rank_on') if on else t('panel.toolbar.rank_off'),
+                            'on' if on else 'off', enabled=True)
+
+    def fit_toolbar(self):
+        """Wrap the bar around its final labels, then keep it inside its monitor."""
+        self.panel.relayout()
+        if self.toolbar_ready:
+            self.place_window(keep=True)
 
     def refresh_buttons(self):
         self.refresh_rank_button()
-        self.panel.set_look('guide', '辅助线 开' if self.guide_enabled else '辅助线 关',
+        self.panel.set_look('guide', t('panel.toolbar.guide_on') if self.guide_enabled
+                            else t('panel.toolbar.guide_off'),
                             'on' if self.guide_enabled else 'off')
-        self.panel.set_look('felt', '台面 开' if self.felt_enabled else '台面 关')
+        self.panel.set_look('felt', t('panel.toolbar.felt_on') if self.felt_enabled
+                            else t('panel.toolbar.felt_off'))
+        # Every state label is set now, and they are wider than the neutral ones, so the
+        # wrap and the position are only correct once the bar has been refitted here.
+        self.fit_toolbar()
+
+    def set_language(self, code):
+        """Switch every open window to another bundled language, and remember the choice."""
+        i18n.set_language(code)
+        self.settings.update(language=i18n.language())
+        self.panel.retranslate()
+        self.refresh_buttons()
+        for window in (self.result_dialog, self.leaderboard_dialog, self.white_ball_dialog,
+                       self.donation, self.update_dialog):
+            if window is not None and window.alive():
+                window.retranslate()
+        diag.log(f'language changed: {i18n.language()}')
 
     # -- toolbar position --------------------------------------------------
-    def place_window(self):
+    def place_window(self, keep=False):
+        """Keep the bar inside the work area of the monitor it belongs to.
+
+        The first run centres it above the taskbar; later runs restore the saved corner.
+        ``keep`` refits the bar where it already is, so a language change or a longer label
+        cannot push it off the edge or onto another monitor.
+        """
         root = self.root
         root.update_idletasks()
         width, height = root.winfo_reqwidth(), root.winfo_reqheight()
-        monitor = win32api.MonitorFromPoint((0, 0), win32con.MONITOR_DEFAULTTOPRIMARY)
-        left, top, right, bottom = win32api.GetMonitorInfo(monitor)['Work']
-        x, y = self.settings.get('bar_x'), self.settings.get('bar_y')
-        if not (isinstance(x, int) and isinstance(y, int)):
-            x, y = left + max(0, (right - left - width) // 2), top + 2
+        if keep:
+            x, y = root.winfo_rootx(), root.winfo_rooty()
         else:
-            monitor = win32api.MonitorFromPoint((x, y), win32con.MONITOR_DEFAULTTONEAREST)
+            monitor = win32api.MonitorFromPoint((0, 0), win32con.MONITOR_DEFAULTTOPRIMARY)
             left, top, right, bottom = win32api.GetMonitorInfo(monitor)['Work']
+            x, y = self.settings.get('bar_x'), self.settings.get('bar_y')
+            if not (isinstance(x, int) and isinstance(y, int)):
+                x, y = left + max(0, (right - left - width) // 2), top + 2
+        left, top, right, bottom = work_area(x, y)
         x = max(left, min(x, right - width))
         y = max(top, min(y, bottom - height))
         root.geometry(f'+{x}+{y}')
+        self.toolbar_ready = True
 
     def remember_position(self):
         if self.root.state() == 'normal':
@@ -200,7 +228,8 @@ class DesktopBilliardsApp:
         if self.closing or not self.rank.needs_prompt:
             return
         self.rank.mark_prompted()
-        if messagebox.askyesno('全球排名', RANK_INTRO, parent=self.root):
+        if messagebox.askyesno(t('ui.rank.dialog_title'),
+                               t('ui.rank.intro', consent=t('ui.rank.consent')), parent=self.root):
             self.rank.set_enabled(True)
         self.refresh_rank_button()
 
@@ -209,12 +238,12 @@ class DesktopBilliardsApp:
             return
         if self.rank.enabled:
             self.rank.set_enabled(False)
-        elif messagebox.askokcancel('全球排名', RANK_CONSENT, parent=self.root):
+        elif messagebox.askokcancel(t('ui.rank.dialog_title'), t('ui.rank.consent'), parent=self.root):
             self.rank.set_enabled(True)
         self.refresh_rank_button()
 
     def show_donation(self):
-        if self.donation is not None and self.donation.winfo_exists():
+        if self.donation is not None and self.donation.alive():
             self.donation.lift()
             return
         try:
@@ -222,26 +251,12 @@ class DesktopBilliardsApp:
                 image = source.convert('RGB')
             image.thumbnail((340, 340), Image.Resampling.LANCZOS)
         except OSError:
-            messagebox.showwarning('打赏', '暂时无法打开赞赏图片。', parent=self.root)
+            messagebox.showwarning(t('ui.donate.title'), t('ui.donate.image_error'), parent=self.root)
             return
-        self.donation = dialog = tk.Toplevel(self.root)
-        dialog.title('打赏')
-        dialog.transient(self.root)
-        dialog.resizable(False, False)
-        body = ttk.Frame(dialog, padding=14, style='Panel.TFrame')
-        body.pack()
-        ttk.Label(body, text='微信扫码赞赏，感谢支持！', style='Table.TLabel').pack(pady=(0, 10))
-        photo = ImageTk.PhotoImage(image, master=dialog)
-        label = ttk.Label(body, image=photo)
-        label.image = photo
-        label.pack()
-        ttk.Label(body, text='赞赏是对这个项目的自愿支持，不包含额外功能或专属技术支持。',
-                  style='Table.TLabel', wraplength=340, justify='center').pack(pady=(10, 0))
-        ttk.Button(body, text='关闭', command=dialog.destroy, style='Table.TButton').pack(pady=(10, 0))
-        dialog.bind('<Escape>', lambda event: dialog.destroy())
+        self.donation = DonationDialog(self.root, image)
 
     def show_white_ball(self):
-        if self.white_ball_dialog is not None and self.white_ball_dialog.window.winfo_exists():
+        if self.white_ball_dialog is not None and self.white_ball_dialog.alive():
             self.white_ball_dialog.window.lift()
             return
         self.white_ball_dialog = WhiteBallDialog(self.root, self.white_texture_path,
@@ -255,7 +270,8 @@ class DesktopBilliardsApp:
     def check_updates(self, manual=False):
         if self.closing or not self.panel.is_enabled('update'):
             return
-        self.panel.set_look('update', '检查中…', enabled=False)
+        self.panel.set_look('update', t('panel.toolbar.update_checking'), enabled=False)
+        self.fit_toolbar()
 
         def fetch():
             try:
@@ -277,11 +293,13 @@ class DesktopBilliardsApp:
         except queue.Empty:
             self.root.after(100, self.finish_update_check, manual)
             return
-        self.panel.set_look('update', '检查更新', enabled=True)
+        self.panel.set_look('update', t('panel.toolbar.update'), enabled=True)
+        self.fit_toolbar()
         if info:
             self.show_update(info)
         elif manual:
-            messagebox.showinfo(config.PRODUCT_NAME, '已是最新版' if success else '检查失败，请稍后重试',
+            messagebox.showinfo(t('product.name'),
+                                t('ui.update.up_to_date') if success else t('ui.update.check_failed'),
                                 parent=self.root)
 
     def show_update(self, info):
@@ -289,9 +307,11 @@ class DesktopBilliardsApp:
             if webbrowser.open(info['download_url']):
                 dialog.destroy()
             else:
-                messagebox.showerror('打开下载失败', '请检查默认浏览器设置。', parent=dialog)
+                messagebox.showerror(t('ui.update.open_failed_title'), t('ui.update.open_failed_body'),
+                                     parent=dialog)
 
-        show_update_dialog(self.root, config.VERSION, info, release_entries(info), download)
+        self.update_dialog = show_update_dialog(self.root, config.VERSION, info,
+                                                release_entries(info), download)
 
     # -- game lifecycle ----------------------------------------------------
     def start(self):
@@ -348,13 +368,13 @@ class DesktopBilliardsApp:
                 raise self.runner.error
             if not self.runner.shown.is_set():
                 if time.monotonic() > self.deadline:
-                    raise RuntimeError('等待桌面恢复守护就绪超时。')
+                    raise RuntimeError(t('ui.error.guard_timeout'))
                 ready = self.journal.with_name(self.journal.stem + '.watchdog.json')
                 if ready.exists():
                     data = json.loads(ready.read_text(encoding='utf-8'))
                     if data.get('session_id') == self.session.snapshot['session_id'] and self.runner.prepared.is_set():
                         if not data.get('ready'):
-                            raise RuntimeError('无法启动桌面恢复守护。')
+                            raise RuntimeError(t('ui.error.guard_failed'))
                         self.runner.request_show(self.session.snapshot, self.journal)
             else:
                 if not self.rank_offered:
@@ -420,8 +440,8 @@ class DesktopBilliardsApp:
             self.result_observation = observation
             diag.log(f'round observed: serial={table.round_serial} finished={finished} '
                      f'pocketed={pocketed}/{total} toolbar_hidden={self.toolbar_hidden}')
-        self.time_title.set('总用时' if finished else '本局用时')
-        self.count_title.set('图标总数' if finished else '图标入袋')
+        self.time_title.set(t('panel.stats.time_total') if finished else t('panel.stats.time'))
+        self.count_title.set(t('panel.stats.count_total') if finished else t('panel.stats.count'))
         self.count_value.set(str(total) if finished else f'{pocketed}/{total}')
         self.remaining_value.set(str(total - pocketed))
         try:
@@ -483,6 +503,17 @@ class DesktopBilliardsApp:
             self.toolbar_hidden = False
         self.toolbar_hover_since = self.toolbar_leave_since = None
 
+    def grab_held(self):
+        """Whether any window holds the input grab, including menu and pop-down lists.
+
+        ``grab_current`` maps the grab window back to a tkinter widget, but a combobox
+        pop-down is created in Tcl, so that lookup raises KeyError('popdown').
+        """
+        try:
+            return bool(self.root.tk.call('grab', 'current'))
+        except tk.TclError:
+            return False
+
     def update_toolbar(self):
         """Keep the original toolbar area discoverable without hiding game windows."""
         if self.felt_enabled:
@@ -491,13 +522,10 @@ class DesktopBilliardsApp:
         if not self.stealth_announced:
             self.stealth_announced = True
             self.show_toolbar()
-            messagebox.showinfo('隐藏台面模式',
-                                '按住 Shift：显示球杆和辅助线\n'
-                                '鼠标移到小眼睛上：恢复工具条\n'
-                                'Ctrl+Alt+X：退出游戏',  parent=self.root)
+            messagebox.showinfo(t('ui.stealth.title'), t('ui.stealth.body'), parent=self.root)
             self.toolbar_leave_since = time.monotonic()
         # Keep dialogs and toolbar button interactions accessible.
-        if self.root.grab_current() is not None or any(
+        if self.grab_held() or any(
                 isinstance(child, tk.Toplevel) and child is not self.toolbar_eye and child.winfo_viewable()
                 for child in self.root.winfo_children()):
             self.show_toolbar()
@@ -562,11 +590,11 @@ class DesktopBilliardsApp:
         if self.result_attempts >= 2 or now < self.result_retry_at:
             return
         try:
-            rank_view = ({'phase': 'error', 'message': '排名暂时无法查询，本局成绩已显示。'}
+            rank_view = ({'phase': 'error', 'message': t('ui.rank.unavailable_note')}
                          if rank_failed else self.rank.view(table))
         except Exception:
             _write_log('rank.log', traceback.format_exc())
-            rank_view = {'phase': 'error', 'message': '排名暂时无法查询，本局成绩已显示。'}
+            rank_view = {'phase': 'error', 'message': t('ui.rank.unavailable_note')}
         view = {
             'time': format_duration(table.play_ms),
             'average': f'{average_seconds(table.play_ms, table.icon_count):.2f}',
@@ -581,7 +609,7 @@ class DesktopBilliardsApp:
                                                  'enable_rank': self.enable_rank_from_dialog,
                                                  'leaderboard': self.show_leaderboard,
                                                  'open_credit': self.open_credit},
-                                      config.CREDIT, config.SITE_TEXT)
+                                      config.CREDIT)
             dialog.update(view)
         except Exception:
             self.result_attempts += 1
@@ -622,10 +650,10 @@ class DesktopBilliardsApp:
         try:
             self.restore()
         except Exception as exc:
-            messagebox.showerror(config.PRODUCT_NAME, f'{describe_error(error)}\n\n{exc}', parent=self.root)
+            messagebox.showerror(t('product.name'), f'{describe_error(error)}\n\n{exc}', parent=self.root)
             return
         _write_log('error.log', traceback.format_exc())
-        messagebox.showerror(config.PRODUCT_NAME, describe_error(error), parent=self.root)
+        messagebox.showerror(t('product.name'), describe_error(error), parent=self.root)
         self.close()
 
     def restore(self):
@@ -642,7 +670,7 @@ class DesktopBilliardsApp:
         try:
             self.restore()
         except Exception as exc:
-            messagebox.showwarning(config.PRODUCT_NAME, f'桌面恢复未完成：{exc}\n\n请重试退出。',
+            messagebox.showwarning(t('product.name'), t('ui.error.restore_incomplete', error=exc),
                                    parent=self.root)
             return
         self.closing = True
@@ -664,9 +692,7 @@ def main():
             ctypes.windll.kernel32.CloseHandle(handle)
             root = tk.Tk()
             root.withdraw()
-            messagebox.showinfo(config.PRODUCT_NAME,
-                                '检测到「桌面蹦迪」正在运行。\n请先退出它，再打开桌面图标台球。',
-                                parent=root)
+            messagebox.showinfo(t('product.name'), t('ui.error.stop_conflict'), parent=root)
             root.destroy()
             return
         root = tk.Tk()
@@ -688,7 +714,7 @@ def main():
                 pass
         else:
             try:
-                messagebox.showerror(config.PRODUCT_NAME, f'启动失败：{describe_error(error)}')
+                messagebox.showerror(t('product.name'), t('ui.error.start_failed', error=describe_error(error)))
             except Exception:
                 pass
         raise

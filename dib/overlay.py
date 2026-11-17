@@ -22,14 +22,15 @@ import win32api
 import win32con
 import win32gui
 import win32process
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
-from . import diag
+from . import diag, fonts
 from .config import CREDIT, REPOSITORY_URL
 from .art import credit_layout, charge_art, cue_art, guide_art, pocket_art, pocket_particles, table_art, white_art
 from .art import round_actions_art, round_actions_layout
 from .balls import MAX_BALLS, ball_summary, fill_sources, priority_order
 from .display import dpi_context, monitors, window_dpi
+from .i18n import language, t
 from .shell import ShellDesktop
 from .table import MIN_SHOT_CHARGE, BilliardsMotion
 from .wallpaper import primary_wallpaper
@@ -115,7 +116,7 @@ def desktop_listview():
     user32.GetShellWindow.restype = W.HWND
     desktop = user32.GetShellWindow()
     if not desktop:
-        raise RuntimeError('找不到 Windows 桌面窗口，请等待桌面加载完成后重试。')
+        raise RuntimeError(t('overlay.error.no_desktop_window'))
     shell_pid = win32process.GetWindowThreadProcessId(desktop)[1]
     primary = next(m[2] for m in monitors() if m[4])
     found = []
@@ -148,7 +149,7 @@ def desktop_listview():
     with dpi_context(-4):
         win32gui.EnumWindows(top, None)
     if not found:
-        raise RuntimeError('找不到覆盖主屏幕的 Explorer 桌面图标窗口，请确认 Windows 桌面已加载。')
+        raise RuntimeError(t('overlay.error.no_listview'))
 
     def score(pair):
         try:
@@ -187,9 +188,9 @@ def item_rects(hwnd, indexes):
     def failure(operation):
         code = ctypes.get_last_error()
         diag.log(f'icon bounds: {operation} failed winerror={code} target_pid={pid} hwnd={hwnd} access=0x38')
-        message = f'读取桌面图标位置失败（{operation}，Windows 错误 {code}）。'
+        message = t('overlay.error.bounds_failed', operation=operation, code=code)
         if code == 5:
-            message += 'Windows 拒绝访问桌面进程，请确认游戏与桌面在同一登录会话运行，并检查安全软件的拦截记录。'
+            message += t('overlay.error.bounds_denied')
         return ctypes.WinError(code, message)
 
     process = kernel.OpenProcess(0x38, False, pid)
@@ -229,13 +230,6 @@ def map_rect(rect, source_origin, target_origin):
     dx = source_origin[0] - target_origin[0]
     dy = source_origin[1] - target_origin[1]
     return (rect[0] + dx, rect[1] + dy, rect[2] + dx, rect[3] + dy)
-
-
-def _load_font(size):
-    try:
-        return ImageFont.truetype('C:/Windows/Fonts/msyh.ttc', size)
-    except OSError:
-        return ImageFont.load_default(size)
 
 
 class LayerSurface:
@@ -390,11 +384,13 @@ class BilliardsOverlay:
         self.primary_screen = primary[1]
         self.primary_work = primary[2]
         self.primary_bounds = map_rect(primary[2], (0, 0), parent_origin)
-        self.charge_font = _load_font(max(12, round(14 * primary[3] / 96)))
+        self.charge_size = max(12, round(14 * primary[3] / 96))
+        self.copy_language = language()
+        self.charge_font = fonts.text(self.charge_size)
         left, top, right, bottom = win32gui.GetClientRect(self.parent)
         x0, y0, x1, y1 = self.primary_bounds
         if not (left <= x0 < x1 <= right and top <= y0 < y1 <= bottom):
-            raise RuntimeError('桌面绘制窗口未覆盖主屏幕，已保留原桌面图标。')
+            raise RuntimeError(t('overlay.error.not_covering'))
         self.empty_frame = Image.new('RGBA', (1, 1))
         for icon, _ in self.rects:
             center = (round((icon[0] + icon[2]) / 2), round((icon[1] + icon[3]) / 2))
@@ -402,11 +398,11 @@ class BilliardsOverlay:
             monitor = win32api.MonitorFromPoint(screen, win32con.MONITOR_DEFAULTTONEAREST)
             info = win32api.GetMonitorInfo(monitor)
             dpi = next(m[3] for m in self.monitor_state if m[0] == info['Device'])
-            self.fonts.append(_load_font(max(9, round(12 * dpi / 96))))
+            self.fonts.append(fonts.data(max(9, round(12 * dpi / 96))))
         self.was_visible = win32gui.IsWindowVisible(self.listview)
         if not self.was_visible:
-            raise RuntimeError('桌面图标当前已隐藏，请先在桌面菜单中显示图标。')
-        self.font = _load_font(max(12, round(12 * window_dpi(self.listview) / 96)))
+            raise RuntimeError(t('overlay.error.icons_hidden'))
+        self.font = fonts.data(max(12, round(12 * window_dpi(self.listview) / 96)))
         self.classname = 'DesktopIconBilliardsOverlay'
         window_class = win32gui.WNDCLASS()
         window_class.hInstance = win32api.GetModuleHandle(None)
@@ -437,7 +433,7 @@ class BilliardsOverlay:
         diag.log(f'icons: shell={len(items)} listview={listview_count(self.listview)} '
                  f'chosen={len(chosen)} unreadable={skipped[:20]}')
         if not chosen:
-            raise RuntimeError('没有获取到图标。请确认桌面上有可用图标，且桌面图标已显示。')
+            raise RuntimeError(t('overlay.error.no_icons'))
         chosen.sort(key=lambda row: row[0])
         return chosen
 
@@ -525,7 +521,7 @@ class BilliardsOverlay:
             if len(loaded) == MAX_BALLS:
                 break
         if not loaded:
-            raise RuntimeError('没有获取到图标。请确认桌面上有可用图标，且桌面图标已显示。')
+            raise RuntimeError(t('overlay.error.no_icons'))
         loaded.sort(key=lambda row: row[0])
         self.items = [self.items[index] for index, _ in loaded]
         self.rects = [self.rects[index] for index, _ in loaded]
@@ -578,10 +574,10 @@ class BilliardsOverlay:
                 draw.text((tx, ty), line, font=font, anchor='mt', fill='white')
             bounds = source.getchannel('A').getbbox()
             if not bounds:
-                raise RuntimeError('系统返回了空图标')
+                raise RuntimeError(t('overlay.error.empty_icon'))
             desktop_bounds = desktop_source.getchannel('A').getbbox()
             if not desktop_bounds:
-                raise RuntimeError('系统返回了空图标')
+                raise RuntimeError(t('overlay.error.empty_icon'))
             center = ((icon[0] + icon[2]) / 2 - left - desktop_source.width / 2
                       + (desktop_bounds[0] + desktop_bounds[2]) / 2)
             bottom = icon[3] - top - desktop_source.height + desktop_bounds[3]
@@ -693,11 +689,11 @@ class BilliardsOverlay:
         if screen is None:
             return
         if self.desktop.get_geometry() != self.geometry:
-            raise RuntimeError('显示器布局变化，已停止台球并恢复桌面')
+            raise RuntimeError(t('overlay.error.geometry_changed'))
         if now - self.monitor_checked >= 0.5:
             self.monitor_checked = now
             if monitors() != self.monitor_state:
-                raise RuntimeError('屏幕布局或 DPI 缩放变化，已恢复桌面，请重新开始。')
+                raise RuntimeError(t('overlay.error.monitors_changed'))
         if self.transition is None and self.want_hidden != self.hidden:
             self.set_hidden(self.want_hidden, now)
         if self.hidden:
@@ -1018,6 +1014,18 @@ class BilliardsOverlay:
                 self.position_layer(hwnd, win32con.HWND_TOP, win32con.SWP_SHOWWINDOW | win32con.SWP_NOZORDER)
         self.guide_key = key
 
+    def copy_face(self):
+        """The face for the overlay's own copy, rebuilt when the language changes.
+
+        The face is picked once at start-up, so a switch in the toolbar would otherwise keep
+        a font without the new script's glyphs and the meter label would draw as empty boxes.
+        """
+        code = language()
+        if code != self.copy_language:
+            self.copy_language = code
+            self.charge_font = fonts.text(self.charge_size)
+        return self.charge_font
+
     def draw_charge(self):
         origin = self.pointer.charge_origin
         if origin is None or self.table.state != 'ready':
@@ -1027,15 +1035,17 @@ class BilliardsOverlay:
             return
 
         percent = round(self.table.charge * 100)
-        key = (origin, percent, self.pointer.charge_falling)
+        # The language is part of the key so a switch repaints a meter cached in the old face.
+        key = (origin, percent, self.pointer.charge_falling, language())
         if key == self.charge_key:
             return
-        frame = charge_art(percent, self.charge_font, self.pointer.charge_falling)
+        font = self.copy_face()
+        frame = charge_art(percent, font, self.pointer.charge_falling)
         width, height = frame.size
 
         left, top, right, bottom = self.primary_bounds
         x, y = origin
-        gap = self.charge_font.size
+        gap = font.size
         x = x + gap if x + gap + width <= right else x - gap - width
         y = y + gap if y + gap + height <= bottom else y - gap - height
         hwnd = self.table_windows.get('charge') or self.table_window('charge')
@@ -1051,7 +1061,7 @@ class BilliardsOverlay:
                 self.round_actions_key = None
             return
         pressed = self.round_action_pressed[1] if self.round_action_pressed else None
-        key = (self.table.round_serial, self.round_action_hover, pressed)
+        key = (self.table.round_serial, self.round_action_hover, pressed, language())
         if key == self.round_actions_key:
             return
         hwnd = self.table_windows.get('round_actions') or self.table_window('round_actions')

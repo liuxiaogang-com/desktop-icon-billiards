@@ -8,6 +8,7 @@ from pathlib import Path
 from PIL import Image
 
 from dib import card
+from dib.i18n import t
 
 BASE = {'time': '06:12.34', 'average': '10.63', 'balls': '35', 'shots': '41', 'note': ''}
 WHEN = time.strptime('2026-11-11', '%Y-%m-%d')
@@ -27,11 +28,13 @@ def render(v):
 
 class TierTests(unittest.TestCase):
     def test_tiers_follow_the_percentile(self):
-        expected = {100: '传奇球王', 99: '传奇球王', 98: '桌面球王', 95: '桌面球王', 94: '大师', 85: '大师',
-                    84: '高手', 65: '高手', 64: '熟手', 40: '熟手', 39: '新秀', 0: '新秀'}
-        for percentile, title in expected.items():
+        expected = {100: 'card.tier.legend', 99: 'card.tier.legend', 98: 'card.tier.champion',
+                    95: 'card.tier.champion', 94: 'card.tier.master', 85: 'card.tier.master',
+                    84: 'card.tier.expert', 65: 'card.tier.expert', 64: 'card.tier.skilled',
+                    40: 'card.tier.skilled', 39: 'card.tier.rookie', 0: 'card.tier.rookie'}
+        for percentile, key in expected.items():
             with self.subTest(percentile=percentile):
-                self.assertEqual(card.tier_for(percentile)[0], title)
+                self.assertEqual(card.tier_for(percentile)[0], t(key))
 
     def test_every_tier_has_its_own_colour(self):
         colours = {colour for _, _, colour in card.TIERS}
@@ -104,7 +107,7 @@ class SharingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = card.save_card(image, Path(folder) / 'sub', when=time.strptime('2026-11-11 08:09:10', '%Y-%m-%d %H:%M:%S'))
             self.assertEqual(path.parent, Path(folder) / 'sub')
-            self.assertEqual(path.name, '桌面图标台球-成绩-20261111-080910.png')
+            self.assertEqual(path.name, f'{t("card.file_prefix")}20261111-080910.png')
             with Image.open(path) as saved:
                 self.assertEqual((saved.format, saved.size), ('PNG', (40, 50)))
 

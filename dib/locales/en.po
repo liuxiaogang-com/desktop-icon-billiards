@@ -1,0 +1,1038 @@
+# Desktop Icon Billiards message catalog
+# This file is read by dib/locales/po.py; edit it with Poedit or any .po tool.
+msgid ""
+msgstr ""
+"Project-Id-Version: Desktop Icon Billiards \n"
+"Language: en\n"
+"X-Language-Name: English\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: product.name
+msgctxt "product.name"
+msgid "桌面图标台球"
+msgstr "Desktop Icon Billiards"
+
+#: product.tagline
+msgctxt "product.tagline"
+msgid "把桌面图标打成一局台球"
+msgstr "Play a game of billiards with your desktop icons"
+
+#: product.credit
+msgctxt "product.credit"
+msgid "作者抖音 @LLLLLLLLLL"
+msgstr "Douyin @LLLLLLLLLL"
+
+#: panel.toolbar.guide
+msgctxt "panel.toolbar.guide"
+msgid "辅助线"
+msgstr "Guide"
+
+#: panel.toolbar.guide_on
+msgctxt "panel.toolbar.guide_on"
+msgid "辅助线 开"
+msgstr "Guide on"
+
+#: panel.toolbar.guide_off
+msgctxt "panel.toolbar.guide_off"
+msgid "辅助线 关"
+msgstr "Guide off"
+
+#: panel.toolbar.felt
+msgctxt "panel.toolbar.felt"
+msgid "台面"
+msgstr "Table"
+
+#: panel.toolbar.felt_on
+msgctxt "panel.toolbar.felt_on"
+msgid "台面 开"
+msgstr "Table on"
+
+#: panel.toolbar.felt_off
+msgctxt "panel.toolbar.felt_off"
+msgid "台面 关"
+msgstr "Table off"
+
+#: panel.toolbar.white_ball
+msgctxt "panel.toolbar.white_ball"
+msgid "白球外观"
+msgstr "Cue ball"
+
+#: panel.toolbar.rank
+msgctxt "panel.toolbar.rank"
+msgid "排名"
+msgstr "Ranking"
+
+#: panel.toolbar.rank_on
+msgctxt "panel.toolbar.rank_on"
+msgid "排名 开"
+msgstr "Ranking on"
+
+#: panel.toolbar.rank_off
+msgctxt "panel.toolbar.rank_off"
+msgid "排名 关"
+msgstr "Ranking off"
+
+#: panel.toolbar.rank_unavailable
+msgctxt "panel.toolbar.rank_unavailable"
+msgid "排名 —"
+msgstr "Ranking —"
+
+#: panel.toolbar.leaderboard
+msgctxt "panel.toolbar.leaderboard"
+msgid "排行榜"
+msgstr "Leaderboard"
+
+#: panel.toolbar.update
+msgctxt "panel.toolbar.update"
+msgid "检查更新"
+msgstr "Check updates"
+
+#: panel.toolbar.update_checking
+msgctxt "panel.toolbar.update_checking"
+msgid "检查中…"
+msgstr "Checking…"
+
+#: panel.toolbar.donate
+msgctxt "panel.toolbar.donate"
+msgid "打赏"
+msgstr "Support"
+
+#: panel.toolbar.quit
+msgctxt "panel.toolbar.quit"
+msgid "退出"
+msgstr "Quit"
+
+#: panel.toolbar.restart
+msgctxt "panel.toolbar.restart"
+msgid "重新开始"
+msgstr "Restart"
+
+#: panel.stats.time
+msgctxt "panel.stats.time"
+msgid "本局用时"
+msgstr "Round time"
+
+#: panel.stats.time_total
+msgctxt "panel.stats.time_total"
+msgid "总用时"
+msgstr "Total time"
+
+#: panel.stats.count
+msgctxt "panel.stats.count"
+msgid "图标入袋"
+msgstr "Potted"
+
+#: panel.stats.count_total
+msgctxt "panel.stats.count_total"
+msgid "图标总数"
+msgstr "Icons total"
+
+#: panel.stats.remaining
+msgctxt "panel.stats.remaining"
+msgid "剩余"
+msgstr "Left"
+
+#: panel.result.title
+msgctxt "panel.result.title"
+msgid "清台完成"
+msgstr "Table cleared"
+
+#: panel.result.leaderboard
+msgctxt "panel.result.leaderboard"
+msgid "查看排行榜  ›"
+msgstr "View leaderboard  ›"
+
+#: panel.result.save
+msgctxt "panel.result.save"
+msgid "保存图片"
+msgstr "Save image"
+
+#: panel.result.copy
+msgctxt "panel.result.copy"
+msgid "复制图片"
+msgstr "Copy image"
+
+#: panel.result.again
+msgctxt "panel.result.again"
+msgid "再来一局"
+msgstr "Play again"
+
+#: panel.result.enable_rank
+msgctxt "panel.result.enable_rank"
+msgid "开启全球排名"
+msgstr "Turn on global ranking"
+
+#: panel.result.saved
+msgctxt "panel.result.saved"
+msgid "已保存，点此打开所在文件夹"
+msgstr "Saved — click to open the folder"
+
+#: panel.result.copied
+msgctxt "panel.result.copied"
+msgid "已复制，可直接粘贴到微信、QQ 或帖子里"
+msgstr "Copied — paste it into any chat"
+
+#: panel.result.save_failed
+msgctxt "panel.result.save_failed"
+msgid "保存失败：{error}"
+msgstr "Could not save: {error}"
+
+#: panel.result.copy_failed
+msgctxt "panel.result.copy_failed"
+msgid "复制失败，请改用「保存图片」"
+msgstr "Could not copy — use \"Save image\" instead"
+
+#: panel.update.title
+msgctxt "panel.update.title"
+msgid "软件更新"
+msgstr "Software update"
+
+#: panel.update.heading
+msgctxt "panel.update.heading"
+msgid "更新内容"
+msgstr "What's new"
+
+#: panel.update.current
+msgctxt "panel.update.current"
+msgid "当前 v{version}"
+msgstr "You have v{version}"
+
+#: panel.update.latest_tag
+msgctxt "panel.update.latest_tag"
+msgid "  ·  最新版本"
+msgstr "  ·  latest"
+
+#: panel.update.no_notes
+msgctxt "panel.update.no_notes"
+msgid "暂无更新说明"
+msgstr "No release notes"
+
+#: panel.update.download
+msgctxt "panel.update.download"
+msgid "下载更新"
+msgstr "Download"
+
+#: panel.update.later
+msgctxt "panel.update.later"
+msgid "稍后"
+msgstr "Later"
+
+#: ui.rank.dialog_title
+msgctxt "ui.rank.dialog_title"
+msgid "全球排名"
+msgstr "Global ranking"
+
+#: ui.rank.consent
+msgctxt "ui.rank.consent"
+msgid ""
+    "开启后，每局清台时会向排名服务器提交：\n"
+    "  • 本局用时、图标数量、击球次数\n"
+    "  • 一个匿名设备标识（由本机系统 ID 加盐哈希得到，无法还原）\n"
+    "\n"
+    "不会上传图标名称、桌面截图或任何个人文件信息。可随时在主窗口关闭。\n"
+    "\n"
+    "是否开启全球排名？"
+msgstr ""
+    "When this is on, every cleared round sends the following to the ranking server:\n"
+    "  • round time, icon count and shot count\n"
+    "  • an anonymous device id (a salted hash of your system id, which cannot be reversed)\n"
+    "\n"
+    "Icon names, desktop screenshots and personal files are never uploaded. You can turn it off in the main window at any time.\n"
+    "\n"
+    "Turn on global ranking?"
+
+#: ui.rank.intro
+msgctxt "ui.rank.intro"
+msgid ""
+    "现在可以和全球玩家比谁清台更快了。\n"
+    "\n"
+    "{consent}"
+msgstr ""
+    "Now you can race players around the world at clearing the table.\n"
+    "\n"
+    "{consent}"
+
+#: ui.rank.unavailable_note
+msgctxt "ui.rank.unavailable_note"
+msgid "排名暂时无法查询，本局成绩已显示。"
+msgstr "Ranking is unavailable right now; your result is shown as it is."
+
+#: ui.donate.title
+msgctxt "ui.donate.title"
+msgid "打赏"
+msgstr "Support"
+
+#: ui.donate.image_error
+msgctxt "ui.donate.image_error"
+msgid "暂时无法打开赞赏图片。"
+msgstr "The support image could not be opened."
+
+#: ui.donate.heading
+msgctxt "ui.donate.heading"
+msgid "微信扫码赞赏，感谢支持！"
+msgstr "Scan the code in WeChat to support the project. Thank you!"
+
+#: ui.donate.note
+msgctxt "ui.donate.note"
+msgid "赞赏是对这个项目的自愿支持，不包含额外功能或专属技术支持。"
+msgstr "Supporting is voluntary and unlocks no extra features or personal technical support."
+
+#: ui.donate.close
+msgctxt "ui.donate.close"
+msgid "关闭"
+msgstr "Close"
+
+#: ui.update.up_to_date
+msgctxt "ui.update.up_to_date"
+msgid "已是最新版"
+msgstr "You are up to date"
+
+#: ui.update.check_failed
+msgctxt "ui.update.check_failed"
+msgid "检查失败，请稍后重试"
+msgstr "Update check failed — please try again later"
+
+#: ui.update.open_failed_title
+msgctxt "ui.update.open_failed_title"
+msgid "打开下载失败"
+msgstr "Could not open the download"
+
+#: ui.update.open_failed_body
+msgctxt "ui.update.open_failed_body"
+msgid "请检查默认浏览器设置。"
+msgstr "Please check your default browser settings."
+
+#: ui.stealth.title
+msgctxt "ui.stealth.title"
+msgid "隐藏台面模式"
+msgstr "Hidden table mode"
+
+#: ui.stealth.body
+msgctxt "ui.stealth.body"
+msgid ""
+    "按住 Shift：显示球杆和辅助线\n"
+    "鼠标移到小眼睛上：恢复工具条\n"
+    "Ctrl+Alt+X：退出游戏"
+msgstr ""
+    "Hold Shift: show the cue and the guide\n"
+    "Hover the eye: bring the toolbar back\n"
+    "Ctrl+Alt+X: quit the game"
+
+#: ui.error.location
+msgctxt "ui.error.location"
+msgid ""
+    "{error}\n"
+    "\n"
+    "出错位置：{where}"
+msgstr ""
+    "{error}\n"
+    "\n"
+    "Raised at {where}"
+
+#: ui.error.log_hint
+msgctxt "ui.error.log_hint"
+msgid ""
+    "\n"
+    "\n"
+    "详细信息见 %TEMP%\\DesktopIconBilliards\\error.log"
+msgstr ""
+    "\n"
+    "\n"
+    "Details in %TEMP%\\DesktopIconBilliards\\error.log"
+
+#: ui.error.start_failed
+msgctxt "ui.error.start_failed"
+msgid "启动失败：{error}"
+msgstr "Could not start: {error}"
+
+#: ui.error.restore_incomplete
+msgctxt "ui.error.restore_incomplete"
+msgid ""
+    "桌面恢复未完成：{error}\n"
+    "\n"
+    "请重试退出。"
+msgstr ""
+    "The desktop was not fully restored: {error}\n"
+    "\n"
+    "Please try quitting again."
+
+#: ui.error.guard_timeout
+msgctxt "ui.error.guard_timeout"
+msgid "等待桌面恢复守护就绪超时。"
+msgstr "Timed out waiting for the desktop recovery helper."
+
+#: ui.error.guard_failed
+msgctxt "ui.error.guard_failed"
+msgid "无法启动桌面恢复守护。"
+msgstr "The desktop recovery helper could not be started."
+
+#: ui.error.stop_conflict
+msgctxt "ui.error.stop_conflict"
+msgid ""
+    "检测到「桌面蹦迪」正在运行。\n"
+    "请先退出它，再打开桌面图标台球。"
+msgstr ""
+    "Another desktop game is running.\n"
+    "Quit it first, then open Desktop Icon Billiards."
+
+#: rank.error.unknown
+msgctxt "rank.error.unknown"
+msgid "排名服务暂不可用，本局成绩未提交"
+msgstr "Ranking is unavailable; this round was not submitted"
+
+#: rank.error.network
+msgctxt "rank.error.network"
+msgid "排名服务暂时连接不上，本局成绩未提交"
+msgstr "Could not reach the ranking server; this round was not submitted"
+
+#: rank.error.bad_response
+msgctxt "rank.error.bad_response"
+msgid "排名服务返回异常，本局成绩未提交"
+msgstr "The ranking server returned an error; this round was not submitted"
+
+#: rank.error.rate_limited
+msgctxt "rank.error.rate_limited"
+msgid "请求过于频繁，本局成绩未提交"
+msgstr "Too many requests; this round was not submitted"
+
+#: rank.error.busy
+msgctxt "rank.error.busy"
+msgid "排名服务繁忙，本局成绩未提交"
+msgstr "The ranking server is busy; this round was not submitted"
+
+#: rank.error.stale_timestamp
+msgctxt "rank.error.stale_timestamp"
+msgid "系统时间不准，请校准后重试"
+msgstr "Your system clock looks wrong; fix it and try again"
+
+#: rank.error.too_fast
+msgctxt "rank.error.too_fast"
+msgid "成绩校验未通过，本局不计入排名"
+msgstr "The result did not pass validation; this round is not ranked"
+
+#: rank.error.round_invalid
+msgctxt "rank.error.round_invalid"
+msgid "成绩校验未通过，本局不计入排名"
+msgstr "The result did not pass validation; this round is not ranked"
+
+#: rank.error.no_round
+msgctxt "rank.error.no_round"
+msgid "未能连接排名服务，本局不计入排名"
+msgstr "Could not reach the ranking server; this round is not ranked"
+
+#: rank.error.implausible_time
+msgctxt "rank.error.implausible_time"
+msgid "成绩校验未通过，本局不计入排名"
+msgstr "The result did not pass validation; this round is not ranked"
+
+#: balls.summary.padded
+msgctxt "balls.summary.padded"
+msgid "桌面 {total} 个图标，复制补到 {balls} 颗"
+msgstr "Desktop has {total} icons; cloned up to {balls} balls"
+
+#: balls.summary.trimmed
+msgctxt "balls.summary.trimmed"
+msgid "桌面 {total} 个图标，取其中 {balls} 颗（优先快捷方式）"
+msgstr "Desktop has {total} icons; playing with {balls} of them (shortcuts first)"
+
+#: balls.summary.exact
+msgctxt "balls.summary.exact"
+msgid "共 {balls} 颗"
+msgstr "{balls} balls"
+
+#: white_ball.title
+msgctxt "white_ball.title"
+msgid "白球外观"
+msgstr "Cue ball"
+
+#: white_ball.intro
+msgctxt "white_ball.intro"
+msgid "选图后可拖动、缩放，调整圆形裁切"
+msgstr "Pick an image, then drag and zoom the circular crop"
+
+#: white_ball.choose
+msgctxt "white_ball.choose"
+msgid "选择图片"
+msgstr "Choose image"
+
+#: white_ball.reset
+msgctxt "white_ball.reset"
+msgid "恢复默认"
+msgstr "Reset"
+
+#: white_ball.hint
+msgctxt "white_ball.hint"
+msgid "JPG / PNG / WebP · 仅保存在本机"
+msgstr "JPG / PNG / WebP · stored on this PC only"
+
+#: white_ball.status_custom
+msgctxt "white_ball.status_custom"
+msgid "自定义图片"
+msgstr "Custom image"
+
+#: white_ball.status_default
+msgctxt "white_ball.status_default"
+msgid "默认白球"
+msgstr "Default cue ball"
+
+#: white_ball.picker_title
+msgctxt "white_ball.picker_title"
+msgid "选择白球图片"
+msgstr "Choose a cue ball image"
+
+#: white_ball.picker_type
+msgctxt "white_ball.picker_type"
+msgid "图片"
+msgstr "Images"
+
+#: white_ball.crop_title
+msgctxt "white_ball.crop_title"
+msgid "裁切白球图片"
+msgstr "Crop the cue ball image"
+
+#: white_ball.crop_hint
+msgctxt "white_ball.crop_hint"
+msgid "拖动图片调整位置 · 滚轮或滑块缩放"
+msgstr "Drag to move · scroll or slide to zoom"
+
+#: white_ball.cancel
+msgctxt "white_ball.cancel"
+msgid "取消"
+msgstr "Cancel"
+
+#: white_ball.apply
+msgctxt "white_ball.apply"
+msgid "使用图片"
+msgstr "Use image"
+
+#: white_ball.error.too_large
+msgctxt "white_ball.error.too_large"
+msgid "请选择小于 20 MB 的图片。"
+msgstr "Choose an image smaller than 20 MB."
+
+#: white_ball.error.format
+msgctxt "white_ball.error.format"
+msgid "请选择 JPG、PNG 或 WebP 图片。"
+msgstr "Choose a JPG, PNG or WebP image."
+
+#: white_ball.error.pixels
+msgctxt "white_ball.error.pixels"
+msgid "图片尺寸过大，请缩小到 2500 万像素以内。"
+msgstr "That image is too large; shrink it below 25 megapixels."
+
+#: white_ball.error.save_failed
+msgctxt "white_ball.error.save_failed"
+msgid ""
+    "保存失败，请重试。\n"
+    "\n"
+    "{error}"
+msgstr ""
+    "Could not save — please try again.\n"
+    "\n"
+    "{error}"
+
+#: white_ball.error.load_failed
+msgctxt "white_ball.error.load_failed"
+msgid ""
+    "无法使用这张图片，原外观已保留。\n"
+    "\n"
+    "{error}"
+msgstr ""
+    "That image could not be used; the previous look is kept.\n"
+    "\n"
+    "{error}"
+
+#: white_ball.error.reset_failed
+msgctxt "white_ball.error.reset_failed"
+msgid ""
+    "恢复默认失败，请重试。\n"
+    "\n"
+    "{error}"
+msgstr ""
+    "Could not reset — please try again.\n"
+    "\n"
+    "{error}"
+
+#: instance.title
+msgctxt "instance.title"
+msgid "切换版本"
+msgstr "Switch version"
+
+#: instance.version_unknown
+msgctxt "instance.version_unknown"
+msgid "未知版本"
+msgstr "unknown version"
+
+#: instance.body
+msgctxt "instance.body"
+msgid ""
+    "{product}\n"
+    "\n"
+    "正在运行：{running}\n"
+    "本次打开：{requested}\n"
+    "\n"
+    "切换会停止游戏并恢复原桌面图标。"
+msgstr ""
+    "{product}\n"
+    "\n"
+    "Running: {running}\n"
+    "Opening: {requested}\n"
+    "\n"
+    "Switching stops the game and restores your desktop icons."
+
+#: instance.keep
+msgctxt "instance.keep"
+msgid "继续使用已打开版本"
+msgstr "Keep the open version"
+
+#: instance.switch
+msgctxt "instance.switch"
+msgid "切换到 {version}"
+msgstr "Switch to {version}"
+
+#: instance.error_title
+msgctxt "instance.error_title"
+msgid "暂时无法切换"
+msgstr "Cannot switch right now"
+
+#: instance.error_body
+msgctxt "instance.error_body"
+msgid "旧版本尚未退出。请先在旧窗口完成桌面恢复并关闭，再打开此版本。"
+msgstr "The older version has not exited yet. Let it restore the desktop in its window, close it, then open this version."
+
+#: instance.starting_title
+msgctxt "instance.starting_title"
+msgid "程序正在启动"
+msgstr "Starting"
+
+#: instance.starting_body
+msgctxt "instance.starting_body"
+msgid "已有实例正在启动，请稍后再打开。"
+msgstr "Another copy is already starting. Please try again in a moment."
+
+#: art.action.again
+msgctxt "art.action.again"
+msgid "再来一局"
+msgstr "Play again"
+
+#: art.action.quit
+msgctxt "art.action.quit"
+msgid "退出游戏"
+msgstr "Quit game"
+
+#: art.charge
+msgctxt "art.charge"
+msgid "力度"
+msgstr "Power"
+
+#: art.error.recycle_empty
+msgctxt "art.error.recycle_empty"
+msgid "Windows 返回了空的回收站图标"
+msgstr "Windows returned an empty Recycle Bin icon"
+
+#: rank.lines.average
+msgctxt "rank.lines.average"
+msgid "本局平均 {average} 秒/颗（{balls} 颗）"
+msgstr "{average} s per ball this round ({balls} balls)"
+
+#: rank.lines.enable_hint
+msgctxt "rank.lines.enable_hint"
+msgid "开启「全球排名」可与其他玩家比较"
+msgstr "Turn on global ranking to compare with other players"
+
+#: rank.lines.skip
+msgctxt "rank.lines.skip"
+msgid "本局开始后才开启排名，下一局起计入"
+msgstr "Ranking was turned on after the round started; the next round counts"
+
+#: rank.lines.too_many
+msgctxt "rank.lines.too_many"
+msgid "图标超过 {max} 个，本局不计入排名"
+msgstr "More than {max} icons; this round is not ranked"
+
+#: rank.lines.ready
+msgctxt "rank.lines.ready"
+msgid "全球排名已开启 · 清台后提交成绩"
+msgstr "Global ranking is on · your result is submitted when the table clears"
+
+#: rank.view.skip
+msgctxt "rank.view.skip"
+msgid "本局开始后才开启排名，下一局起计入。"
+msgstr "Ranking was turned on after the round started; the next round counts."
+
+#: rank.view.too_many
+msgctxt "rank.view.too_many"
+msgid "图标超过 {max} 个，本局不计入排名。"
+msgstr "More than {max} icons; this round is not ranked."
+
+#: rank.text.rank
+msgctxt "rank.text.rank"
+msgid "第 {rank} 名"
+msgstr "Rank #{rank}"
+
+#: rank.text.percentile
+msgctxt "rank.text.percentile"
+msgid "超过 {percentile}% 的玩家"
+msgstr "Better than {percentile}% of players"
+
+#: rank.text.best
+msgctxt "rank.text.best"
+msgid "个人最佳第 {rank} 名"
+msgstr "Personal best #{rank}"
+
+#: rank.text.new_best
+msgctxt "rank.text.new_best"
+msgid "新的个人最佳 · "
+msgstr "New personal best · "
+
+#: rank.status.submitting
+msgctxt "rank.status.submitting"
+msgid "正在提交成绩…"
+msgstr "Submitting your result…"
+
+#: rank.status.first
+msgctxt "rank.status.first"
+msgid "本局全球第 {rank} 名 · 超过 {percentile}% 的玩家"
+msgstr "World #{rank} this round · better than {percentile}% of players"
+
+#: rank.status.second
+msgctxt "rank.status.second"
+msgid "{prefix}个人最佳第 {rank} 名"
+msgstr "{prefix}personal best #{rank}"
+
+#: leaderboard.title
+msgctxt "leaderboard.title"
+msgid "全球排行榜"
+msgstr "Global leaderboard"
+
+#: leaderboard.subtitle
+msgctxt "leaderboard.subtitle"
+msgid "个人最佳 · 平均每颗用时"
+msgstr "Personal bests · average time per ball"
+
+#: leaderboard.column.rank
+msgctxt "leaderboard.column.rank"
+msgid "名次"
+msgstr "Rank"
+
+#: leaderboard.column.icons
+msgctxt "leaderboard.column.icons"
+msgid "图标数"
+msgstr "Icons"
+
+#: leaderboard.column.shots
+msgctxt "leaderboard.column.shots"
+msgid "击球数"
+msgstr "Shots"
+
+#: leaderboard.column.average
+msgctxt "leaderboard.column.average"
+msgid "平均用时 / 秒"
+msgstr "Average / s"
+
+#: leaderboard.me
+msgctxt "leaderboard.me"
+msgid "我"
+msgstr "me"
+
+#: leaderboard.own_best
+msgctxt "leaderboard.own_best"
+msgid "我的最佳"
+msgstr "My best"
+
+#: leaderboard.own_rank
+msgctxt "leaderboard.own_rank"
+msgid "第 {rank} 名"
+msgstr "Rank #{rank}"
+
+#: leaderboard.round.icons
+msgctxt "leaderboard.round.icons"
+msgid "{count} 个图标"
+msgstr "{count} icons"
+
+#: leaderboard.round.shots
+msgctxt "leaderboard.round.shots"
+msgid "{count} 杆"
+msgstr "{count} shots"
+
+#: leaderboard.loading
+msgctxt "leaderboard.loading"
+msgid "正在查询…"
+msgstr "Looking up…"
+
+#: leaderboard.refreshing
+msgctxt "leaderboard.refreshing"
+msgid "正在获取最新排名…"
+msgstr "Fetching the latest ranking…"
+
+#: leaderboard.empty
+msgctxt "leaderboard.empty"
+msgid "暂无上榜成绩"
+msgstr "no ranked result yet"
+
+#: leaderboard.unavailable
+msgctxt "leaderboard.unavailable"
+msgid "暂时无法查询"
+msgstr "unavailable right now"
+
+#: leaderboard.updated
+msgctxt "leaderboard.updated"
+msgid "更新于 {stamp}"
+msgstr "updated {stamp}"
+
+#: leaderboard.empty_prefix
+msgctxt "leaderboard.empty_prefix"
+msgid "榜单暂无成绩 · "
+msgstr "No results yet · "
+
+#: leaderboard.error.unsupported
+msgctxt "leaderboard.error.unsupported"
+msgid "排名服务尚未支持新榜单"
+msgstr "The ranking server does not support leaderboards yet"
+
+#: leaderboard.error.rate_limited
+msgctxt "leaderboard.error.rate_limited"
+msgid "刷新过于频繁，请稍后重试"
+msgstr "Refreshing too often — try again shortly"
+
+#: leaderboard.error.generic
+msgctxt "leaderboard.error.generic"
+msgid "暂时无法获取排名，请重试"
+msgstr "Could not fetch the ranking — please try again"
+
+#: leaderboard.retry_hint
+msgctxt "leaderboard.retry_hint"
+msgid " · 点击重试"
+msgstr " · click to retry"
+
+#: card.tier.legend
+msgctxt "card.tier.legend"
+msgid "传奇球王"
+msgstr "Legend"
+
+#: card.tier.champion
+msgctxt "card.tier.champion"
+msgid "桌面球王"
+msgstr "Desktop Champion"
+
+#: card.tier.master
+msgctxt "card.tier.master"
+msgid "大师"
+msgstr "Master"
+
+#: card.tier.expert
+msgctxt "card.tier.expert"
+msgid "高手"
+msgstr "Expert"
+
+#: card.tier.skilled
+msgctxt "card.tier.skilled"
+msgid "熟手"
+msgstr "Skilled"
+
+#: card.tier.rookie
+msgctxt "card.tier.rookie"
+msgid "新秀"
+msgstr "Rookie"
+
+#: card.hero.caption
+msgctxt "card.hero.caption"
+msgid "本局全球排名"
+msgstr "Global rank this round"
+
+#: card.percentile.prefix
+msgctxt "card.percentile.prefix"
+msgid "超过  "
+msgstr "You beat  "
+
+#: card.percentile.suffix
+msgctxt "card.percentile.suffix"
+msgid "  的全球玩家"
+msgstr "  of all players"
+
+#: card.average.caption
+msgctxt "card.average.caption"
+msgid "平均每颗用时"
+msgstr "Average per ball"
+
+#: card.average.unit
+msgctxt "card.average.unit"
+msgid "秒"
+msgstr "s"
+
+#: card.message.pending
+msgctxt "card.message.pending"
+msgid "正在提交成绩，稍后显示全球排名"
+msgstr "Submitting your result — the global rank follows"
+
+#: card.message.off
+msgctxt "card.message.off"
+msgid "开启「全球排名」，看看你超过了多少玩家"
+msgstr "Turn on global ranking to see how you compare"
+
+#: card.tile.time
+msgctxt "card.tile.time"
+msgid "总用时"
+msgstr "Total time"
+
+#: card.tile.average
+msgctxt "card.tile.average"
+msgid "平均每颗"
+msgstr "Per ball"
+
+#: card.tile.icons
+msgctxt "card.tile.icons"
+msgid "图标"
+msgstr "Icons"
+
+#: card.tile.shots
+msgctxt "card.tile.shots"
+msgid "击球"
+msgstr "Shots"
+
+#: card.best
+msgctxt "card.best"
+msgid "个人最佳  {rank} 名"
+msgstr "Personal best  #{rank}"
+
+#: card.new_best
+msgctxt "card.new_best"
+msgid "新纪录"
+msgstr "NEW BEST"
+
+#: card.file_prefix
+msgctxt "card.file_prefix"
+msgid "桌面图标台球-成绩-"
+msgstr "DesktopIconBilliards-result-"
+
+#: shell.error.no_desktop
+msgctxt "shell.error.no_desktop"
+msgid "暂时无法连接 Windows 桌面。请等待桌面加载完成后重试；如果使用了桌面替代软件，请先恢复 Windows 桌面。"
+msgstr "Cannot reach the Windows desktop yet. Wait for it to finish loading and try again; if you use a desktop replacement, restore the real Windows desktop first."
+
+#: shell.error.pending_recovery
+msgctxt "shell.error.pending_recovery"
+msgid "有未完成的桌面布局恢复记录，请先点“恢复原位置”。"
+msgstr "A desktop layout restore is still pending. Click \"Restore original positions\" first."
+
+#: shell.error.no_icons
+msgctxt "shell.error.no_icons"
+msgid "没有找到真实桌面图标；请确认Explorer桌面已启用。"
+msgstr "No real desktop icons were found; check that the Explorer desktop is enabled."
+
+#: shell.error.snap_failed
+msgctxt "shell.error.snap_failed"
+msgid "无法暂时关闭图标自动排列/网格对齐。"
+msgstr "Icon auto-arrange / grid alignment could not be turned off."
+
+#: shell.error.monitor_changed
+msgctxt "shell.error.monitor_changed"
+msgid "显示器布局或分辨率已变化；已暂停，布局快照保留。"
+msgstr "The monitor layout or resolution changed; the round is paused and its layout snapshot kept."
+
+#: shell.error.monitor_changed_keep
+msgctxt "shell.error.monitor_changed_keep"
+msgid "显示器布局已变化，保留原快照；请恢复显示器配置后再恢复图标。"
+msgstr "The monitor layout changed and the original snapshot is kept. Restore your display setup, then restore the icons."
+
+#: shell.error.restore_incomplete
+msgctxt "shell.error.restore_incomplete"
+msgid "桌面位置未完全恢复；快照仍保留，请重试恢复。"
+msgstr "The desktop positions were not fully restored; the snapshot is kept — try restoring again."
+
+#: shell.error.flags_incomplete
+msgctxt "shell.error.flags_incomplete"
+msgid "排列设置未完全恢复；快照仍保留。"
+msgstr "The arrangement settings were not fully restored; the snapshot is kept."
+
+#: shell.error.desktop_changed
+msgctxt "shell.error.desktop_changed"
+msgid "Windows 桌面在连接过程中发生变化，请重新启动游戏。"
+msgstr "The Windows desktop changed while connecting. Please start the game again."
+
+#: shell.error.no_view
+msgctxt "shell.error.no_view"
+msgid "Windows 未返回可用的桌面视图，请等待桌面加载完成后重试。"
+msgstr "Windows did not return a usable desktop view. Wait for the desktop to finish loading and try again."
+
+#: overlay.error.no_desktop_window
+msgctxt "overlay.error.no_desktop_window"
+msgid "找不到 Windows 桌面窗口，请等待桌面加载完成后重试。"
+msgstr "The Windows desktop window was not found. Wait for it to finish loading and try again."
+
+#: overlay.error.no_listview
+msgctxt "overlay.error.no_listview"
+msgid "找不到覆盖主屏幕的 Explorer 桌面图标窗口，请确认 Windows 桌面已加载。"
+msgstr "The Explorer desktop icon window that covers the main screen was not found. Check that the Windows desktop has loaded."
+
+#: overlay.error.bounds_failed
+msgctxt "overlay.error.bounds_failed"
+msgid "读取桌面图标位置失败（{operation}，Windows 错误 {code}）。"
+msgstr "Could not read the desktop icon positions ({operation}, Windows error {code})."
+
+#: overlay.error.bounds_denied
+msgctxt "overlay.error.bounds_denied"
+msgid "Windows 拒绝访问桌面进程，请确认游戏与桌面在同一登录会话运行，并检查安全软件的拦截记录。"
+msgstr " Windows denied access to the desktop process. Check that the game and the desktop run in the same login session, and check your security software log."
+
+#: overlay.error.not_covering
+msgctxt "overlay.error.not_covering"
+msgid "桌面绘制窗口未覆盖主屏幕，已保留原桌面图标。"
+msgstr "The drawing window does not cover the main screen, so the original desktop icons were kept."
+
+#: overlay.error.icons_hidden
+msgctxt "overlay.error.icons_hidden"
+msgid "桌面图标当前已隐藏，请先在桌面菜单中显示图标。"
+msgstr "Desktop icons are hidden right now. Show them from the desktop menu first."
+
+#: overlay.error.no_icons
+msgctxt "overlay.error.no_icons"
+msgid "没有获取到图标。请确认桌面上有可用图标，且桌面图标已显示。"
+msgstr "No icons were read. Check that the desktop has usable icons and that desktop icons are shown."
+
+#: overlay.error.empty_icon
+msgctxt "overlay.error.empty_icon"
+msgid "系统返回了空图标"
+msgstr "Windows returned an empty icon"
+
+#: overlay.error.geometry_changed
+msgctxt "overlay.error.geometry_changed"
+msgid "显示器布局变化，已停止台球并恢复桌面"
+msgstr "The monitor layout changed; the table stopped and the desktop was restored"
+
+#: overlay.error.monitors_changed
+msgctxt "overlay.error.monitors_changed"
+msgid "屏幕布局或 DPI 缩放变化，已恢复桌面，请重新开始。"
+msgstr "The screen layout or DPI scaling changed; the desktop was restored — please start again."
+
+#: paths.error.no_directory
+msgctxt "paths.error.no_directory"
+msgid "找不到可写入的运行目录（临时目录和用户目录都不可用）"
+msgstr "No writable runtime directory: both the temp folder and your user folder are unusable"
+
+#: runner.error.thread_alive
+msgctxt "runner.error.thread_alive"
+msgid "动画线程尚未退出，请稍后再次停止。"
+msgstr "The animation thread has not stopped yet; try stopping again in a moment."
+
+#: card.hero.rank
+msgctxt "card.hero.rank"
+msgid "第 {rank} 名"
+msgstr "#{rank}"
+
+#: card.value.icons
+msgctxt "card.value.icons"
+msgid "{value} 颗"
+msgstr "{value}"
+
+#: card.value.shots
+msgctxt "card.value.shots"
+msgid "{value} 杆"
+msgstr "{value}"
+
+#: card.value.average
+msgctxt "card.value.average"
+msgid "{value} 秒"
+msgstr "{value}s"

@@ -8,6 +8,7 @@ from collections import deque
 import win32gui
 
 from .display import dpi_context
+from .i18n import t
 
 FRAME_SECONDS = 1 / 60
 
@@ -56,7 +57,7 @@ class BilliardsRunner:
         self.stopping.set()
         self.thread.join(5)
         if self.thread.is_alive():
-            raise RuntimeError('动画线程尚未退出，请稍后再次停止。')
+            raise RuntimeError(t('runner.error.thread_alive'))
 
     def _run(self):
         with dpi_context(-4):

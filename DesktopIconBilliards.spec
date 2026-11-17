@@ -54,13 +54,17 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[(icon_path, 'assets'), (os.path.join(base_dir, 'assets', 'donation.jpg'), 'assets'),
-           (os.path.join(base_dir, 'assets', 'desktop-icon-billiards.png'), 'assets')],
+           (os.path.join(base_dir, 'assets', 'desktop-icon-billiards.png'), 'assets'),
+           # The message catalogs are data, not code, so they are copied next to the package.
+           (os.path.join(base_dir, 'dib', 'locales', '*.po'), 'dib/locales')],
     hiddenimports=[
         # app.pyw dispatches --watchdog to this module from inside main(); list
         # it explicitly so the helper can never fall out of the frozen bundle.
         'dib.watchdog',
         # The GUI behind app.pyw (imported lazily in main()).
         'dib.ui',
+        # The catalogs are read from disk at runtime, so the reader must be explicit too.
+        'dib.locales.po',
         # comtypes creates its submodules dynamically at runtime.
         'comtypes.stream',
     ],

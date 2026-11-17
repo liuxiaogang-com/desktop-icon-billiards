@@ -13,6 +13,8 @@ import time
 import uuid
 from pathlib import Path
 
+from .i18n import t
+
 # FWF_AUTOARRANGE | FWF_SNAPTOGRID: the two view flags that snap icons to a grid.
 ARRANGE_MASK = 0x1 | 0x4
 
@@ -27,8 +29,7 @@ def _find_desktop(lookup):
             return hwnd, dispatch
         if attempt < 4:
             time.sleep(.15)
-    raise RuntimeError('暂时无法连接 Windows 桌面。请等待桌面加载完成后重试；'
-                       '如果使用了桌面替代软件，请先恢复 Windows 桌面。')
+    raise RuntimeError(t('shell.error.no_desktop'))
 
 
 class PendingRecovery(RuntimeError):
@@ -60,10 +61,10 @@ class LayoutSession:
         """Persist the layout, then disable snapping unless this is an overlay run."""
         if self.journal.exists():
             if json.loads(self.journal.read_text(encoding='utf-8')).get('active'):
-                raise PendingRecovery('有未完成的桌面布局恢复记录，请先点“恢复原位置”。')
+                raise PendingRecovery(t('shell.error.pending_recovery'))
         items = self.backend.items()
         if not items:
-            raise RuntimeError('没有找到真实桌面图标；请确认Explorer桌面已启用。')
+            raise RuntimeError(t('shell.error.no_icons'))
         self.snapshot = {
             'overlay_only': overlay_only,
             'version': 2,
@@ -83,7 +84,7 @@ class LayoutSession:
         try:
             self.backend.set_flags(ARRANGE_MASK, 0)
             if self.backend.get_flags() & ARRANGE_MASK:
-                raise RuntimeError('无法暂时关闭图标自动排列/网格对齐。')
+                raise RuntimeError(t('shell.error.snap_failed'))
         except Exception:
             self.restore()
             raise
@@ -94,7 +95,7 @@ class LayoutSession:
         if not self.snapshot or not self.snapshot.get('active'):
             raise RuntimeError('No active layout session')
         if list(self.backend.get_geometry()) != self.snapshot['geometry']:
-            raise PendingRecovery('显示器布局或分辨率已变化；已暂停，布局快照保留。')
+            raise PendingRecovery(t('shell.error.monitor_changed'))
         positions = {}
         for identity, (dx, dy) in offsets.items():
             if identity not in self.baseline:
@@ -133,7 +134,7 @@ class LayoutSession:
             atomic_json(self.journal, self.snapshot)
             return {'success': True, 'restored': 0, 'missing': 0}
         if list(self.backend.get_geometry()) != self.snapshot['geometry']:
-            raise PendingRecovery('显示器布局已变化，保留原快照；请恢复显示器配置后再恢复图标。')
+            raise PendingRecovery(t('shell.error.monitor_changed_keep'))
         current = {item['id']: item for item in self.backend.items()}
         target = {
             item['id']: (item['x'], item['y'])
@@ -147,10 +148,10 @@ class LayoutSession:
             self.backend.set_flags(ARRANGE_MASK, int(self.snapshot['flags']))
         actual = {item['id']: (item['x'], item['y']) for item in self.backend.items()}
         if any(actual.get(identity) != tuple(point) for identity, point in target.items()):
-            raise PendingRecovery('桌面位置未完全恢复；快照仍保留，请重试恢复。')
+            raise PendingRecovery(t('shell.error.restore_incomplete'))
         restored_flags = self.backend.get_flags() & ARRANGE_MASK
         if restored_flags != (int(self.snapshot['flags']) & ARRANGE_MASK):
-            raise PendingRecovery('排列设置未完全恢复；快照仍保留。')
+            raise PendingRecovery(t('shell.error.flags_incomplete'))
         self.snapshot.update(active=False, restored_at=time.time())
         atomic_json(self.journal, self.snapshot)
         self.last = dict(target)
@@ -214,14 +215,14 @@ class ShellDesktop:
 
         ct_hwnd, ct_dispatch = _find_desktop(ct_lookup)
         if ct_hwnd != self.hwnd:
-            raise RuntimeError('Windows 桌面在连接过程中发生变化，请重新启动游戏。')
+            raise RuntimeError(t('shell.error.desktop_changed'))
         ct_browser = ct_dispatch.QueryInterface(comtypes.IServiceProvider).QueryService(
             comtypes.GUID('{4C96BE40-915C-11CF-99D3-00AA004AE837}'), IShellBrowser
         )
         out = ctypes.c_void_p()
         self._invoke(ct_browser, 15, [ctypes.POINTER(ctypes.c_void_p)], ctypes.byref(out))
         if not out.value:
-            raise RuntimeError('Windows 未返回可用的桌面视图，请等待桌面加载完成后重试。')
+            raise RuntimeError(t('shell.error.no_view'))
         self.ct_shellview = ctypes.cast(out, ctypes.POINTER(comtypes.IUnknown))
         self.ct_view = self.ct_shellview.QueryInterface(IFolderView2)
         self.items()

@@ -44,8 +44,12 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["dib"]
+packages = ["dib", "dib.locales"]
 include-package-data = false
+
+# The .po files are read at runtime, so a plain wheel install needs them too.
+[tool.setuptools.package-data]
+"dib.locales" = ["*.po"]
 
 [tool.setuptools.dynamic]
 version = { attr = "dib.__version__" }

@@ -5,14 +5,10 @@ alpha layered windows by the shell.
 """
 import math
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFilter
 
-
-def _credit_font(size):
-    try:
-        return ImageFont.truetype('C:/Windows/Fonts/msyh.ttc', size)
-    except OSError:
-        return ImageFont.load_default(size)
+from . import fonts
+from .i18n import t
 
 
 def round_actions_layout(table):
@@ -23,8 +19,8 @@ def round_actions_layout(table):
     x = round((left + right - width * 2 - gap) / 2)
     y = round((top + bottom - height) / 2)
     return size, (
-        ('again', '再来一局', (x, y, x + width, y + height)),
-        ('quit', '退出游戏', (x + width + gap, y, x + width * 2 + gap, y + height)),
+        ('again', t('art.action.again'), (x, y, x + width, y + height)),
+        ('quit', t('art.action.quit'), (x + width + gap, y, x + width * 2 + gap, y + height)),
     )
 
 
@@ -33,7 +29,7 @@ def round_actions_art(table, hovered=None, pressed=None):
     ox, oy = rows[0][2][:2]
     frame = Image.new('RGBA', (rows[-1][2][2] - ox, rows[-1][2][3] - oy))
     draw = ImageDraw.Draw(frame)
-    font = _credit_font(size)
+    font = fonts.text(size)
     for action, text, (left, top, right, bottom) in rows:
         if action == 'again':
             fill = (105, 221, 179) if hovered != action else (134, 239, 199)
@@ -53,7 +49,7 @@ def round_actions_art(table, hovered=None, pressed=None):
 def credit_layout(table, credit):
     """Share the text positions and hit rectangles in desktop coordinates."""
     left, top, right, bottom = table.bounds
-    font = _credit_font(round(max(11, table.height / 66)))
+    font = fonts.text(round(max(11, table.height / 66)))
     margin = table.work_area[3] - bottom if table.desktop else 0
     lines = credit.splitlines()
     cx = left + table.width * .75
@@ -137,7 +133,7 @@ def pocket_art(table, source):
     frame = Image.new('RGBA', (right - left + 2 * pad + 1, bottom - top + 2 * pad + 1))
     bounds = source.getchannel('A').getbbox()
     if not bounds:
-        raise RuntimeError('Windows 返回了空的回收站图标')
+        raise RuntimeError(t('art.error.recycle_empty'))
     # Keep the Shell image's native desktop size and transparent margins.
     icon = source
     for px, py in table.pockets:
@@ -157,7 +153,7 @@ def charge_art(percent, font, falling=False):
     draw.rounded_rectangle((0, 0, width - 1, height - 1), radius=pad,
                            fill=(13, 25, 23, 244), outline=(74, 105, 94, 220))
     label_y = pad + font.size // 2
-    draw.text((pad, label_y), '力度', font=font, anchor='lm', fill=(222, 238, 231))
+    draw.text((pad, label_y), t('art.charge'), font=font, anchor='lm', fill=(222, 238, 231))
     draw.text((width - pad, label_y), f'{percent}%', font=font, anchor='rm', fill=(133, 242, 198))
     # A drawn chevron avoids depending on arrow glyphs in the selected font.
     cx, cy = width // 2, label_y

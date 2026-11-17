@@ -7,7 +7,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from dib.rank import (MAX_RANKED_BALLS, MIN_BALLS, RankApi, RankController, RankError, RankSettings, ERROR_TEXT,
+from dib.rank import (MAX_RANKED_BALLS, MIN_BALLS, RankApi, RankController, RankError, RankSettings, error_text,
                       average_seconds, fill_sources, is_rankable, machine_hash, normalize_base_url, sign)
 from dib.table import BilliardsMotion
 
@@ -405,13 +405,13 @@ class ControllerTests(unittest.TestCase):
         self.observe_until(lambda: self.rank.round_id == ROUND)
         self.api.finish_error = RankError('too_fast', 422)
         play_round(self.game)
-        self.observe_until(lambda: self.rank.status == [ERROR_TEXT['too_fast']])
+        self.observe_until(lambda: self.rank.status == [error_text('too_fast')])
 
         self.game.reset()
         self.observe_until(lambda: self.rank.round_id == ROUND)
         self.api.finish_error = RankError('network')
         play_round(self.game)
-        self.observe_until(lambda: self.rank.status == [ERROR_TEXT['network']])
+        self.observe_until(lambda: self.rank.status == [error_text('network')])
 
     def test_unauthorized_secret_triggers_one_re_registration(self):
         self.settings.update(device_id=DEVICE, secret='stale', server=self.api.base)
@@ -448,7 +448,7 @@ class ControllerTests(unittest.TestCase):
         self.api.finish_error = RankError('too_fast', 422)
         play_round(self.game)
         self.observe_until(lambda: self.rank.outcome is not None)
-        self.assertEqual(self.rank.view(self.game), {'phase': 'error', 'message': ERROR_TEXT['too_fast']})
+        self.assertEqual(self.rank.view(self.game), {'phase': 'error', 'message': error_text('too_fast')})
         self.game.reset()
         self.rank.observe(self.game)
         self.assertEqual(self.rank.view(self.game)['phase'], 'pending')  # a new round forgets the old outcome

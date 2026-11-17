@@ -6,6 +6,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from . import __version__
+from .i18n import t
 
 # Single source of truth for the release version. The build script reads it.
 VERSION: str = __version__
@@ -13,8 +14,9 @@ VERSION_PARTS = tuple(int(part) for part in VERSION.split('.'))
 if len(VERSION_PARTS) != 3 or any(part < 0 for part in VERSION_PARTS):
     raise RuntimeError(f'Invalid version: {VERSION!r}')
 
-PRODUCT_NAME = '桌面图标台球'
-PRODUCT_NAME_EN = 'Desktop Icon Billiards'
+# Every title the product has shipped under. The window title is translated, so finding a
+# running instance matches any of them instead of one language.
+PRODUCT_NAMES = ('桌面图标台球', 'Desktop Icon Billiards')
 INTERNAL_NAME = 'DesktopIconBilliards'
 AUTHOR = 'LXG'
 # Shown next to the version, in the compact layouts, on the result window and faintly on the
@@ -22,11 +24,22 @@ AUTHOR = 'LXG'
 CREDIT = 'GitHub@liuxiaogang-com'
 CREDIT_URL = 'https://github.com/liuxiaogang-com'
 REPOSITORY_URL = 'https://github.com/liuxiaogang-com/desktop-icon-billiards'
-DOUYIN_CREDIT = '作者抖音 @LLLLLLLLLL'
+DOUYIN_CREDIT = t('product.credit')
 DOUYIN_URL = 'https://go.liuxiaogang.com/douyin?' + urlencode({'app': INTERNAL_NAME, 'version': VERSION})
-# Author credit printed on the shareable result card.
-SITE_TEXT = DOUYIN_CREDIT
-WINDOW_TITLE = f'{PRODUCT_NAME} {VERSION}'
+# Author credit as the startup language shows it. Windows and the result card read
+# ``t('product.credit')`` instead, so a language switch reaches them too.
+DOUYIN_CREDIT = t('product.credit')
+
+
+def product_name():
+    """The product name in the interface language."""
+    return t('product.name')
+
+
+def window_title():
+    """The window title: the localised product name plus the version."""
+    return f'{product_name()} {VERSION}'
+
 
 BASE = Path(__file__).resolve().parent.parent
 ASSETS = BASE / 'assets'

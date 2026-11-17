@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import os
 
+from .i18n import t
+
 MIN_BALLS = 15
 MAX_BALLS = 45
 SHORTCUT_SUFFIXES = ('.lnk', '.url', '.exe', '.appref-ms', '.msi')
@@ -43,7 +45,7 @@ def fill_sources(real_count, minimum=MIN_BALLS):
 def ball_summary(desktop_total, used, padded):
     """One short line telling the player how the ball count came about."""
     if padded:
-        return f'桌面 {desktop_total} 个图标，复制补到 {used + padded} 颗'
+        return t('balls.summary.padded', total=desktop_total, balls=used + padded)
     if desktop_total > used:
-        return f'桌面 {desktop_total} 个图标，取其中 {used} 颗（优先快捷方式）'
-    return f'共 {used} 颗'
+        return t('balls.summary.trimmed', total=desktop_total, balls=used)
+    return t('balls.summary.exact', balls=used)
